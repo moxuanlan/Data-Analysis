@@ -10,7 +10,7 @@
 
 ## 本地启动
 
-准备 Java 21、Maven 3.6.3+、MySQL 8。默认数据库地址为 `127.0.0.1:3306`，应用端口为 `8088`。
+准备 Java 11 及以上、Maven 3.6.3+、MySQL 8。默认数据库地址为 `127.0.0.1:3306`，应用端口为 `8088`。
 
 ```sql
 CREATE DATABASE IF NOT EXISTS datalens
@@ -26,7 +26,7 @@ cd DataLens-backend
 .\start.ps1
 ```
 
-其他环境（已设置上述环境变量与 Java 21）：
+其他环境（已设置上述环境变量与 Java 11 及以上）：
 
 ```sh
 cd DataLens-backend
@@ -49,3 +49,5 @@ mvn test -DforkCount=0
 当前仅监听本机地址，GitHub 保存源码，不提供在线后端。公网使用前需配置 HTTPS、Secure Cookie、独立最小权限数据库用户、账号/IP 限流及账号归属验证。会话限流仅适合本地开发。未包含个人数据库数据、凭据、Java 安装包、构建产物和日志。
 
 更多说明见 [后端 README](DataLens-backend/README.md)。
+
+Java 兼容性：已使用 Oracle JDK 11.0.20 完成编译、单元测试及真实 MySQL 注册登录联调。框架为 Spring Boot 2.7.18（已结束开源维护）；公网部署需评估维护支持或升级框架和 JDK。启动脚本使用 JAVA_HOME 或 PATH，不再强制使用内置 JDK 21。

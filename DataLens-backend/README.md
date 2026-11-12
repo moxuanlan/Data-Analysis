@@ -1,6 +1,6 @@
 # DataLens 登录后端
 
-Java 21 / Spring Boot / MySQL，本地监听 127.0.0.1:8088。
+Java 11 及以上（最低版本已验证）/ Spring Boot 2.7.18 / MySQL，本地监听 127.0.0.1:8088。
 
 数据库为 datalens；凭据通过 DATALENS_DB_USERNAME 和 DATALENS_DB_PASSWORD 环境变量提供，不写入源码。
 
@@ -16,3 +16,7 @@ POST 必须携带 CSRF 接口返回的请求头与令牌。会话使用 HttpOnly
 测试：mvn test -DforkCount=0。测试使用模拟数据库；真实 MySQL 联调需另行执行。
 
 已执行真实 MySQL 联调：注册、重复账号、弱密码、错误密码、会话识别、退出失效、CSRF 缺失拒绝、页面访问均通过。test_live.py 会创建 qa- 前缀测试账号，执行后需按输出账号精确清理。
+
+启动使用 JAVA_HOME 指定的 JDK，未设置时使用 PATH 中的 Java；不再优先选择内置 Java 21。需安装 Maven。
+
+为兼容 Java 11 使用 Spring Boot 2.7.18；该版本已结束开源维护，公网部署前需评估维护支持或升级至受支持的框架与 JDK。

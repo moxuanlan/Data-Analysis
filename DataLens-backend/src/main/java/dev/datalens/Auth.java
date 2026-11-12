@@ -1,7 +1,7 @@
 package dev.datalens;
 import java.util.*;
 import java.nio.charset.StandardCharsets;
-import jakarta.servlet.http.*;
+import javax.servlet.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -14,8 +14,16 @@ import org.springframework.http.HttpStatus;
 class Auth {
  private final JdbcTemplate db; private final BCryptPasswordEncoder encoder;
  Auth(JdbcTemplate db,BCryptPasswordEncoder encoder){this.db=db;this.encoder=encoder;}
- record Credentials(String username,String account,String password,String confirmPassword){}
- record User(long id,String name,String account) implements java.io.Serializable {}
+ static class Credentials {
+  public String username,account,password,confirmPassword;
+  public Credentials(){}
+  Credentials(String username,String account,String password,String confirmPassword){this.username=username;this.account=account;this.password=password;this.confirmPassword=confirmPassword;}
+  String username(){return username;} String account(){return account;} String password(){return password;} String confirmPassword(){return confirmPassword;}
+ }
+ static class User implements java.io.Serializable {
+  public final long id; public final String name,account;
+  User(long id,String name,String account){this.id=id;this.name=name;this.account=account;}
+ }
  @GetMapping("/csrf") Map<String,String> csrf(CsrfToken token){return Map.of("token",token.getToken(),"header",token.getHeaderName());}
  String account(String value){
   String a=value==null?"":value.trim().toLowerCase(Locale.ROOT);
@@ -46,5 +54,6 @@ class Auth {
  // shortcut: Session-local limit for the initial local-only release; use shared IP/account limits before public deployment.
  void throttle(HttpSession session){long now=System.currentTimeMillis();Long start=(Long)session.getAttribute("attemptStart");Integer count=(Integer)session.getAttribute("attemptCount");if(start==null||now-start>60000){start=now;count=0;}if(count>=10)throw error(429,"操作频繁，请一分钟后再试");session.setAttribute("attemptStart",start);session.setAttribute("attemptCount",count+1);}
  ResponseStatusException error(int status,String message){return new ResponseStatusException(HttpStatus.valueOf(status),message);}
- @ExceptionHandler(ResponseStatusException.class) org.springframework.http.ResponseEntity<Map<String,String>> errors(ResponseStatusException e){return org.springframework.http.ResponseEntity.status(e.getStatusCode()).body(Map.of("message",e.getReason()));}
+ @ExceptionHandler(ResponseStatusException.class) org.springframework.http.ResponseEntity<Map<String,String>> errors(ResponseStatusException e){return org.springframework.http.ResponseEntity.status(e.getStatus()).body(Map.of("message",e.getReason()));}
 }
+
