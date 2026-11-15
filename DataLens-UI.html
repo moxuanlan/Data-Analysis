@@ -366,6 +366,7 @@ async function enter(index = -1) {
     } finally {
       animations.forEach(animation => animation.cancel());
       enteringWorkspace = false;
+      if (demoLoggedIn && $('#auth').hidden && $('#work').hidden) enter(index);
     }
     return;
   }
@@ -418,7 +419,8 @@ async function restoreSession() {
     document.body.classList.remove('session-loading');
   }
 }
-restoreSession();
+// Keep the page hidden until Workbench.js installs the real workspace.
+document.body.classList.add('session-loading');
 
 
 function resizePanel(handle, delta) {
@@ -541,4 +543,4 @@ document.addEventListener('visibilitychange', syncNight);
 window.addEventListener('resize', () => { sizeNight(); syncNight(); });
 sizeNight();
 syncNight();
-</script><script src="Workbench.js"></script></html>
+</script><link rel="stylesheet" href="Workbench.css"><script src="vendor/echarts.min.js"></script><script src="Workbench-enhancements.js"></script><script src="Workbench.js"></script></html>

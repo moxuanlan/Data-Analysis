@@ -38,6 +38,16 @@ class DataFlowTest {
   mvc.perform(get("/api/data/"+id+"/csv").session(other)).andExpect(status().isNotFound());
   mvc.perform(post("/api/data/"+id+"/sql").session(other).with(csrf()).contentType("application/json").content("{}")).andExpect(status().isNotFound());
  }
+ @Test void chartRespectsOwnershipConfirmationAndSampleLimit()throws Exception{
+  StringBuilder csv=new StringBuilder("id,value\n");for(int i=0;i<1005;i++)csv.append(i).append(",0\n");
+  long id=upload(csv.toString());
+  mvc.perform(get("/api/data/"+id+"/chart").session(session)).andExpect(status().isBadRequest());
+  confirm(id);
+  mvc.perform(get("/api/data/"+id+"/chart")).andExpect(status().isUnauthorized());
+  MockHttpSession other=new MockHttpSession();other.setAttribute("user",new Auth.User(90002,"other","other@example.test"));
+  mvc.perform(get("/api/data/"+id+"/chart").session(other)).andExpect(status().isNotFound());
+  mvc.perform(get("/api/data/"+id+"/chart").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.rows.length()").value(1000)).andExpect(jsonPath("$.total").value(1005));
+ }
  @Test void csvPreservesZerosNullEmptyUnicodeQuotesAndNewlines()throws Exception{
   long id=upload("id,text,optional\n001,\"中文 ' \\\"\"quoted\"\"\nnext\",\\N\n002,,0\n");
   var rows=store.page(id,0,50);assertEquals("001",rows.get(0).get(0));assertNull(rows.get(0).get(2));assertEquals("",rows.get(1).get(1));assertEquals("0",rows.get(1).get(2));assertTrue(rows.get(0).get(1).contains("\n"));

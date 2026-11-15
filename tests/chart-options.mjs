@@ -1,0 +1,17 @@
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const context=vm.createContext({window:{addEventListener(){}},document:{addEventListener(){}}});
+vm.runInContext(readFileSync(new URL('../Workbench-enhancements.js',import.meta.url),'utf8'),context);
+const {chartNumber,makeChartOption}=context;
+for(const v of [null,'',' ','abc','Infinity','0xff'])assert.equal(chartNumber(v),null);
+assert.equal(chartNumber('0'),0);assert.equal(chartNumber('-2.5'),-2.5);
+const data={columns:['id','amount'],rows:[['1','0'],['2',null],['3','-3'],['4','7']]};
+assert.equal(makeChartOption(data,0,1,'bar').series[0].data[1],null);
+assert.equal(makeChartOption(data,0,1,'scatter').series[0].data.length,3);
+assert.throws(()=>makeChartOption(data,0,1,'rose'),/负数/);
+assert.throws(()=>makeChartOption({columns:['a'],rows:[[null]]},0,0,'line'),/没有/);
+const constant={columns:['a'],rows:[['4'],['4']]};
+assert.equal(makeChartOption(constant,0,0,'boxplot').series[0].data[0].join(','),'4,4,4,4,4');
+assert.equal(makeChartOption(data,0,1,'heatmap').visualMap.min,-3);
+console.log('PASS: numeric parsing, missing/zero/negative values, scatter, boxplot, heatmap');

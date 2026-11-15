@@ -77,3 +77,17 @@ node tests/browser-smoke.mjs
 ```
 
 `DataLens-backend/test_live.py` 是旧的真实 MySQL 账号联调脚本，会创建测试账号，不自动清理；不要把它误认为内存测试。
+
+
+### 2026-11-15 工作台交互更新
+
+- 文件导入默认首行为字段名，预览表格直接显示单元格内容。
+- 当前浏览器中每个账号首次进入工作台弹出流程介绍；顶部“工作流程”可随时重开。支持滚轮、步骤点击、前后按钮和键盘。
+- 清洗采用左侧规则、右侧前后对照；只显示所选操作相关参数，预览后才能生成新版本。
+- 本地 ECharts 5.6.0 直接绘制六种图形，自动选择数值字段；使用当前数据集前 1000 行，并显示范围，不代表全量统计。重复类别不自动汇总，空值不转为零，玫瑰图拒绝负数。
+- AI 侧栏分为腾讯元宝网页检索和 DeepSeek SQL／清洗建议，保留外发确认。
+- 验证：`node tests/chart-options.mjs`；启动隔离 H2 服务后 `node tests/browser-smoke.mjs`；`mvn -B -q -f DataLens-backend/pom.xml package -DforkCount=0`。
+
+### 本机 AI 测试配置
+
+后端启动时自动读取 `~/.config/datalens/ai.properties`，无需每次输入 AI 凭据。该文件位于 Git 仓库之外，仅当前用户可读写；不应复制进源码。支持 `DATALENS_TENCENT_SECRET_ID`、`DATALENS_TENCENT_SECRET_KEY`、`DATALENS_DEEPSEEK_API_KEY` 属性。修改后重启服务；同名环境变量优先。其他电脑需单独配置。

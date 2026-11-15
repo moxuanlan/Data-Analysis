@@ -17,10 +17,10 @@ try{
  socket=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);
  await new Promise((r,j)=>{socket.onopen=r;socket.onerror=j;});
  let sequence=0;const pending=new Map();const errors=[];
- socket.onmessage=e=>{const message=JSON.parse(e.data);if(message.id){const call=pending.get(message.id);pending.delete(message.id);message.error?call.reject(Error(JSON.stringify(message.error))):call.resolve(message.result);}else if(message.method==='Runtime.exceptionThrown'){errors.push(message.params.exceptionDetails.text);}};
+ socket.onmessage=e=>{const message=JSON.parse(e.data);if(message.id){const call=pending.get(message.id);pending.delete(message.id);message.error?call.reject(Error(JSON.stringify(message.error))):call.resolve(message.result);}else if(message.method==='Fetch.requestPaused'){setTimeout(()=>cdp('Fetch.continueRequest',{requestId:message.params.requestId}),800);}else if(message.method==='Runtime.exceptionThrown'){errors.push(message.params.exceptionDetails.text);}};
  const cdp=(method,params={})=>new Promise((resolve,reject)=>{const id=++sequence;pending.set(id,{resolve,reject});socket.send(JSON.stringify({id,method,params}));});
  const evaluate=async expression=>{const result=await cdp('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text);return result.result.value;};
- const until=async expression=>{for(let i=0;i<100;i++){if(await evaluate(expression))return;await pause(100);}throw Error('Timed out: '+expression);};
+ const until=async expression=>{for(let i=0;i<100;i++){if(await evaluate(expression))return;await pause(100);}throw Error('Timed out: '+expression+' '+JSON.stringify(errors)+' '+await evaluate("JSON.stringify({msg:document.querySelector('#auth-message')?.textContent,entering:enteringWorkspace,user:!!currentUser,auth:document.querySelector('#auth').hidden,work:document.querySelector('#work').hidden})"));};
  await cdp('Runtime.enable');await cdp('Page.enable');await cdp('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
  await cdp('Page.navigate',{url:base+'/DataLens-UI.html'});
  await until("typeof dataRequest==='function' && !document.body.classList.contains('session-loading')");
@@ -30,6 +30,27 @@ try{
  await until("!document.querySelector('#auth').hidden");
  await evaluate(`document.querySelector('#auth-account').value=${JSON.stringify(account)};document.querySelector('#auth-password').value=${JSON.stringify(password)};document.querySelector('#auth-submit').click()`);
  await until("!enteringWorkspace && !document.querySelector('#work').hidden && !!document.querySelector('#new-team-name')");
+ await until("!!document.querySelector('#workflow-modal')?.open");
+ await until("!!document.querySelector('#workflow-modal iframe').contentDocument?.querySelector('#flow-next')");
+ await evaluate("document.querySelector('#workflow-modal iframe').contentDocument.querySelector('#flow-next').click()");
+ await until("document.querySelector('#workflow-modal iframe').contentDocument.querySelector('#eyebrow').textContent.startsWith('02')");
+ await evaluate("document.querySelector('#close-workflow').click();firstWorkflow()");
+ assert.equal(await evaluate("document.querySelector('#workflow-modal').open"),false);
+ // Force session restoration to win the race against the workspace script.
+ await cdp('Network.enable');await cdp('Network.setCacheDisabled',{cacheDisabled:true});
+ await cdp('Fetch.enable',{patterns:[{urlPattern:'*/Workbench.js',requestStage:'Request'}]});
+ await cdp('Page.reload',{ignoreCache:true});
+ await until("typeof dataState!=='undefined' && !document.body.classList.contains('session-loading')");
+ assert(await evaluate("!!document.querySelector('#new-team-name')"),'Reload must render the real workspace, not the legacy overview');
+ await cdp('Fetch.disable');
+ await evaluate("document.querySelector('#work [data-stage=\"0\"]').click()");
+ await until("!!document.querySelector('#data-file')");
+ await pause(500);
+ await evaluate("document.querySelector('#work [data-stage=\"-1\"]').click()");
+ await until("!!document.querySelector('#new-team-name')");
+ await pause(500);
+ assert(await evaluate("!!document.querySelector('#new-team-name')"),'Home navigation must use the same workspace');
+
  await evaluate("document.querySelector('#work [data-stage=\"0\"]').click()");await until("!!document.querySelector('#data-file')");
  await evaluate("document.querySelector('#data-null').value='\\\\N'");
  const doc=await cdp('DOM.getDocument');const file=await cdp('DOM.querySelector',{nodeId:doc.root.nodeId,selector:'#data-file'});
@@ -37,6 +58,7 @@ try{
  await evaluate("document.querySelector('#upload-data').click()");
  await until("!!document.querySelector('#confirm-import')");
  assert.equal(await evaluate('dataState.dataset.row_count'),3);
+ assert.equal(await evaluate("document.querySelectorAll('#work td details').length"),0);
  assert.equal(await evaluate('dataState.dataset.rows[0][0]'),'001');
  assert.equal(await evaluate('dataState.dataset.rows[2][2]'),null);
  await evaluate("document.querySelector('#confirm-import').click()");await until("dataState.dataset.status==='READY'");
@@ -44,16 +66,28 @@ try{
  await evaluate("document.querySelector('#generate-data-sql').click()");await until("!!dataState.sql");
  assert.match(await evaluate("document.querySelector('#data-sql-preview').textContent"),/INSERT INTO/);
  await evaluate("document.querySelector('#work [data-stage=\"2\"]').click()");await until("!!document.querySelector('#preview-clean')");
- await evaluate("document.querySelector('#clean-operation').value='fill';document.querySelector('#clean-column').value='amount';document.querySelector('#clean-value').value='0';document.querySelector('#preview-clean').click()");
+ await evaluate("document.querySelector('#clean-operation').value='fill';document.querySelector('#clean-operation').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#clean-column').value='amount';document.querySelector('#clean-value').value='0';document.querySelector('#preview-clean').click()");
  await until("!!dataState.cleanRule");
+ assert.equal(await evaluate("document.querySelector('#clean-pattern').closest('label').hidden"),true);
+ assert(await evaluate("document.querySelector('.clean-result').getBoundingClientRect().left>document.querySelector('.clean-controls').getBoundingClientRect().left"));
+ await pause(400);await writeFile('/tmp/datalens-cleaning-desktop.png',Buffer.from((await cdp('Page.captureScreenshot',{format:'png'})).data,'base64'));
+
  await evaluate("document.querySelector('#apply-clean').click()");await until("stage===1 && dataState.dataset.parent_id!=null");
  assert.equal(await evaluate('dataState.dataset.rows[2][2]'),'0');
- await evaluate("document.querySelector('#work [data-stage=\"4\"]').click()");await until("!!document.querySelector('#visual-reference')");
- await evaluate("document.querySelector('#visual-reference').click()");await until("document.querySelector('#visual-code').textContent.length>0");
+ await evaluate("document.querySelector('#work [data-stage=\"4\"]').click()");await until("!!chartInstance && document.querySelector('#chart-status').textContent.includes('绘制前')");
+ for(const kind of ['line','bar','rose','boxplot','scatter','heatmap']){
+  await evaluate(`document.querySelector('#visual-kind').value='${kind}';document.querySelector('#visual-kind').dispatchEvent(new Event('change'))`);
+  assert(await evaluate("document.querySelector('#chart-status').textContent.includes('绘制前')"),kind);
+  assert(await evaluate("chartInstance.getOption().series.length>0"),kind);
+ }
+ await evaluate("document.querySelector('[data-ai-mode=deepseek]').click()");
+ assert.equal(await evaluate("document.querySelector('#ai-consent').closest('label').hidden"),false);
+ await evaluate("document.querySelector('[data-ai-mode=search]').click()");
+ assert.equal(await evaluate("document.querySelector('#ai-consent').closest('label').hidden"),true);
  await pause(1000);const shot=await cdp('Page.captureScreenshot',{format:'png'});await writeFile('/tmp/datalens-workspace-desktop.png',Buffer.from(shot.data,'base64'));
  await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
- assert(await evaluate("document.querySelector('#work').getBoundingClientRect().width>0"));
+ assert(await evaluate("document.documentElement.scrollWidth<=innerWidth+1"));
  await pause(500);const mobile=await cdp('Page.captureScreenshot',{format:'png'});await writeFile('/tmp/datalens-workspace-mobile.png',Buffer.from(mobile.data,'base64'));
  assert.deepEqual(errors,[],'Unexpected JavaScript exceptions');
- console.log('PASS: real Chrome login, file upload, confirmation, SQL, cleaning version, visualization reference and mobile render');
+ console.log('PASS: real Chrome login, file upload, confirmation, SQL, cleaning version, six ECharts charts, workflow modal and AI tabs and mobile render');
 }finally{socket?.close();browser.kill('SIGTERM');await pause(400);await rm(directory,{recursive:true,force:true});}

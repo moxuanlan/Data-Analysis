@@ -49,6 +49,12 @@ class DataApi {
    response.setContentType("text/csv;charset=UTF-8");response.setHeader("Content-Disposition","attachment; filename=dataset-"+id+".csv");response.setContentLengthLong(Files.size(file));Files.copy(file,response.getOutputStream());
   }finally{Files.deleteIfExists(file);}
  }
+ @GetMapping("/{id}/chart") Map<String,Object> chart(@PathVariable long id,HttpServletRequest request){
+  var dataset=store.readable(id,user(request));
+  if(!"READY".equals(dataset.get("status")))throw DatasetStore.bad("请先确认导入");
+  // shortcut: chart the first 1000 rows; add full-dataset aggregation when larger charts are needed.
+  return Map.of("columns",store.columns(dataset),"rows",store.page(id,0,1000),"total",dataset.get("row_count"));
+ }
  @GetMapping("/{id}/summary") Map<String,Object> summary(@PathVariable long id,HttpServletRequest request){
   var dataset=store.readable(id,user(request));List<String> columns=store.columns(dataset);int size=columns.size();int[] missing=new int[size],empty=new int[size],numeric=new int[size];java.math.BigDecimal[] sums=new java.math.BigDecimal[size];Arrays.fill(sums,java.math.BigDecimal.ZERO);
   store.each(id,row->{for(int i=0;i<size;i++){String v=row.get(i);if(v==null)missing[i]++;else if(v.isEmpty())empty[i]++;else if(v.length()<=100&&v.matches("[+-]?[0-9]{1,65}(?:\\.[0-9]{1,30})?"))try{sums[i]=sums[i].add(new java.math.BigDecimal(v));numeric[i]++;}catch(NumberFormatException ignored){}}});
