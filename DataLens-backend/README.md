@@ -1,22 +1,8 @@
-# DataLens 登录后端
+# DataLens 后端
 
-Java 11 及以上（最低版本已验证）/ Spring Boot 2.7.18 / MySQL，本地监听 127.0.0.1:8088。
+启动、配置、功能边界和验证方法见 [项目 README](../README.md)。
 
-数据库为 datalens；凭据通过 DATALENS_DB_USERNAME 和 DATALENS_DB_PASSWORD 环境变量提供，不写入源码。
-
-运行 `./start.ps1`，访问 http://127.0.0.1:8088/DataLens-UI.html 。不要直接用 file:// 打开后端版页面。
-页面从父目录 DataLens-UI.html 提供，需保持目录关系。
-
-接口：GET /api/auth/csrf、POST /api/auth/register、POST /api/auth/login、GET /api/auth/me、POST /api/auth/logout。
-POST 必须携带 CSRF 接口返回的请求头与令牌。会话使用 HttpOnly、SameSite=Strict Cookie，30 分钟闲置失效。
-密码使用 BCrypt（成本 12），数据库不保存明文密码。手机号和邮箱正常保存，尚无归属验证码验证。
-
-当前仅供本机开发。部署公网前必须配置 HTTPS / Secure Cookie、独立最小权限数据库用户、共享的账号/IP 限流及验证码验证。当前限流仅每会话一分钟 10 次，不能抵御重新建立会话的攻击。其他数据分析功能仍为前端演示，不是后端业务接口。
-
-测试：mvn test -DforkCount=0。测试使用模拟数据库；真实 MySQL 联调需另行执行。
-
-已执行真实 MySQL 联调：注册、重复账号、弱密码、错误密码、会话识别、退出失效、CSRF 缺失拒绝、页面访问均通过。test_live.py 会创建 qa- 前缀测试账号，执行后需按输出账号精确清理。
-
-启动使用 JAVA_HOME 指定的 JDK，未设置时使用 PATH 中的 Java；不再优先选择内置 Java 21。需安装 Maven。
-
-为兼容 Java 11 使用 Spring Boot 2.7.18；该版本已结束开源维护，公网部署前需评估维护支持或升级至受支持的框架与 JDK。
+- 账号接口 `/api/auth/*`；数据、团队、采集和搜索接口 `/api/data/*`。
+- 所有业务接口校验会话，所有写请求需要 CSRF 令牌；数据读取和下载校验所有权／团队共享权限，数据修改仅允许所有者。
+- `schema.sql` 仅创建不存在的表，不清空用户数据。
+- `start.sh` 适用于 macOS/Linux，密码只在本机隐藏输入。

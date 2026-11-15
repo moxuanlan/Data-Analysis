@@ -5,3 +5,56 @@ CREATE TABLE IF NOT EXISTS users (
  password_hash VARCHAR(100) NOT NULL,
  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS datasets (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT,
+ owner_id BIGINT NOT NULL,
+ name VARCHAR(255) NOT NULL,
+ source_name VARCHAR(255) NOT NULL,
+ columns_json LONGTEXT NOT NULL,
+ row_count INT NOT NULL DEFAULT 0,
+ status VARCHAR(20) NOT NULL,
+ parent_id BIGINT,
+ rules_json LONGTEXT,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY(owner_id) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS dataset_rows (
+ dataset_id BIGINT NOT NULL,
+ `row_number` INT NOT NULL,
+ cells_json LONGTEXT NOT NULL,
+ PRIMARY KEY(dataset_id,`row_number`),
+ FOREIGN KEY(dataset_id) REFERENCES datasets(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS teams (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT,
+ owner_id BIGINT NOT NULL,
+ name VARCHAR(100) NOT NULL,
+ FOREIGN KEY(owner_id) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS team_members (
+ team_id BIGINT NOT NULL,
+ user_id BIGINT NOT NULL,
+ PRIMARY KEY(team_id,user_id),
+ FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE,
+ FOREIGN KEY(user_id) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS dataset_shares (
+ dataset_id BIGINT NOT NULL,
+ team_id BIGINT NOT NULL,
+ PRIMARY KEY(dataset_id,team_id),
+ FOREIGN KEY(dataset_id) REFERENCES datasets(id) ON DELETE CASCADE,
+ FOREIGN KEY(team_id) REFERENCES teams(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS crawl_jobs (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT,
+ owner_id BIGINT NOT NULL,
+ dataset_id BIGINT,
+ target_count INT NOT NULL,
+ actual_count INT NOT NULL DEFAULT 0,
+ status VARCHAR(30) NOT NULL,
+ reason VARCHAR(500),
+ cancelled BOOLEAN NOT NULL DEFAULT FALSE,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY(owner_id) REFERENCES users(id)
+);
