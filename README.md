@@ -99,3 +99,15 @@ node tests/browser-smoke.mjs
 ### 网页问答与访问错误
 
 AI 面板直接输入问题或网址，不再单独填写检索词。无网址时元宝 SearchPro 检索前 3 个来源，读取可访问的网页详情后由 DeepSeek 整理回答；有网址时直接读取该网页。界面标出来源及详情读取状态，失败时不编造页面内容。DeepSeek 的可选联网辅助直接使用当前问题。仅允许有限次同站公开页面重定向；错误页、登录验证及明确访问拒绝会停止，并显示原因。
+
+### Vercel + Railway 完整部署
+
+Vercel 部署前端及同源 `/api/*` 代理；Railway 运行 Docker 中的 Java 服务及 MySQL。Vercel 不能直接运行本项目的 Java 常驻服务。
+
+1. Railway 创建项目，添加带持久卷的 MySQL 服务，再从本仓库根目录部署 Java 服务（读取 `railway.json` 和 `Dockerfile`）。
+2. Java 服务配置 `MYSQLHOST`、`MYSQLPORT`、`MYSQLDATABASE`、`MYSQLUSER`、`MYSQLPASSWORD` 为 MySQL 服务对应变量的引用。数据库须通过私有网络连接；不要开启数据库公网端口。
+3. Java 服务按需配置 `DATALENS_TENCENT_SECRET_ID`、`DATALENS_TENCENT_SECRET_KEY`、`DATALENS_DEEPSEEK_API_KEY`。密钥只填平台变量，不提交仓库。为 Java 服务生成 HTTPS 域名。
+4. Vercel 导入本仓库 main 分支、根目录，环境变量 `DATALENS_API_ORIGIN` 填上一步的 HTTPS 源站（不含路径）。使用仓库 `vercel.json` 构建部署。
+5. 验证 Vercel 地址的登录、上传、采集、图表和 AI，确认请求通过同源代理。首次上线是空数据库，需重新注册；本地数据不会自动上传。
+
+云端使用单副本：登录会话和任务执行队列保存在进程中，重启后需重新登录，进行中的采集标记为中断。先确认平台额度与计费，再启用资源。公开上线前应限制分享范围；当前认证限流仍是会话级，尚未进行公网压力及安全审计。

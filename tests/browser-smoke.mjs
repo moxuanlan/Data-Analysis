@@ -88,6 +88,10 @@ try{
  await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  assert(await evaluate("document.documentElement.scrollWidth<=innerWidth+1"));
  await pause(500);const mobile=await cdp('Page.captureScreenshot',{format:'png'});await writeFile('/tmp/datalens-workspace-mobile.png',Buffer.from(mobile.data,'base64'));
+ await evaluate("document.querySelector('#change-password').click()");
+ assert(await evaluate("document.querySelector('#password-dialog').open"));
+ await evaluate("document.querySelector('#password-dialog .password-cancel').click()");
+ assert.equal(await evaluate("document.querySelectorAll('#delete-dataset').length"),1);
  assert.deepEqual(errors,[],'Unexpected JavaScript exceptions');
  console.log('PASS: real Chrome login, file upload, confirmation, SQL, cleaning version, six ECharts charts, workflow modal and AI tabs and mobile render');
 }finally{socket?.close();browser.kill('SIGTERM');await pause(400);await rm(directory,{recursive:true,force:true});}

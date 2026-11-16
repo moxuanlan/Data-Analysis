@@ -62,6 +62,16 @@ class DataFlowTest {
   mvc.perform(delete("/api/data/crawl/"+latest).session(session).with(csrf())).andExpect(status().isOk());
   assertEquals(1,store.page(dataset,0,50).size());assertEquals(4,store.db.queryForObject("SELECT COUNT(*) FROM crawl_jobs WHERE owner_id=90001",Integer.class));
  }
+ @Test void passwordChangeValidatesOriginalAndNewLogin()throws Exception{
+  store.db.update("UPDATE users SET password_hash=? WHERE id=90001",new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(4).encode("OldPassword123"));
+  String body="{\"currentPassword\":\"OldPassword123\",\"newPassword\":\"NewPassword456\",\"confirmPassword\":\"NewPassword456\"}";
+  mvc.perform(post("/api/auth/password").session(session).contentType("application/json").content(body)).andExpect(status().isForbidden());
+  mvc.perform(post("/api/auth/password").session(session).with(csrf()).contentType("application/json").content(body.replace("OldPassword123","WrongPassword123"))).andExpect(status().isBadRequest());
+  mvc.perform(post("/api/auth/password").session(session).with(csrf()).contentType("application/json").content(body)).andExpect(status().isOk());
+  assertTrue(session.isInvalid());
+  mvc.perform(post("/api/auth/login").with(csrf()).contentType("application/json").content("{\"account\":\"qa@example.test\",\"password\":\"OldPassword123\"}")).andExpect(status().isUnauthorized());
+  mvc.perform(post("/api/auth/login").with(csrf()).contentType("application/json").content("{\"account\":\"qa@example.test\",\"password\":\"NewPassword456\"}")).andExpect(status().isOk());
+ }
  @Test void csvPreservesZerosNullEmptyUnicodeQuotesAndNewlines()throws Exception{
   long id=upload("id,text,optional\n001,\"中文 ' \\\"\"quoted\"\"\nnext\",\\N\n002,,0\n");
   var rows=store.page(id,0,50);assertEquals("001",rows.get(0).get(0));assertNull(rows.get(0).get(2));assertEquals("",rows.get(1).get(1));assertEquals("0",rows.get(1).get(2));assertTrue(rows.get(0).get(1).contains("\n"));

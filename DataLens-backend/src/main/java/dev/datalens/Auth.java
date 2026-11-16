@@ -34,11 +34,24 @@ class Auth {
   throttle(session);
   String a=account(c.account());String name=c.username()==null?"":c.username().trim();String p=c.password();
   if(name.isEmpty()||name.length()>40)throw error(400,"用户名需为 1–40 个字符");
-  if(p==null||p.length()<8||p.getBytes(StandardCharsets.UTF_8).length>72||!p.matches("(?s).*[a-z].*")||!p.matches("(?s).*[A-Z].*")||!p.matches("(?s).*[0-9].*"))throw error(400,"密码至少 8 位，包含大小写字母和数字，最多 72 字节");
+  validatePassword(p);
   if(!p.equals(c.confirmPassword()))throw error(400,"两次输入的密码不一致");
   try{db.update("INSERT INTO users(username,account,password_hash) VALUES(?,?,?)",name,a,encoder.encode(p));}
   catch(DuplicateKeyException e){throw error(409,"该账号已注册，请登录");}
   return Map.of("message","注册成功，请登录");
+ }
+ void validatePassword(String p){
+  if(p==null||p.length()<8||p.getBytes(StandardCharsets.UTF_8).length>72||!p.matches("(?s).*[a-z].*")||!p.matches("(?s).*[A-Z].*")||!p.matches("(?s).*[0-9].*"))throw error(400,"密码至少 8 位，包含大小写字母和数字，最多 72 字节");
+ }
+ static class PasswordChange {public String currentPassword,newPassword,confirmPassword;}
+ @PostMapping("/password") Map<String,String> changePassword(@RequestBody PasswordChange c,HttpServletRequest request){
+  User user=me(request);throttle(request.getSession());validatePassword(c.newPassword);
+  if(!c.newPassword.equals(c.confirmPassword))throw error(400,"两次输入的新密码不一致");
+  String hash=db.queryForObject("SELECT password_hash FROM users WHERE id=?",String.class,user.id);
+  if(c.currentPassword==null||c.currentPassword.getBytes(StandardCharsets.UTF_8).length>72||!encoder.matches(c.currentPassword,hash))throw error(400,"原密码不正确");
+  if(c.newPassword.equals(c.currentPassword))throw error(400,"新密码不能与原密码相同");
+  if(db.update("UPDATE users SET password_hash=? WHERE id=? AND password_hash=?",encoder.encode(c.newPassword),user.id,hash)!=1)throw error(409,"密码已发生变化，请重新登录后再试");
+  request.getSession().invalidate();return Map.of("message","密码已修改，请使用新密码登录");
  }
  @PostMapping("/login") User login(@RequestBody Credentials c,HttpServletRequest request){
   throttle(request.getSession());String a=account(c.account());

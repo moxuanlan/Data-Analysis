@@ -36,3 +36,10 @@ function inferAiPurpose(question,currentStage){
  if(/sql|查询|建表|insert|select|update/i.test(question))return 'sql';
  return currentStage===2?'clean':currentStage===4?'visualize':'sql';
 }
+
+document.addEventListener('click',event=>{
+ if(!event.target.closest('#change-password'))return;
+ closeUserDetails();let dialog=document.querySelector('#password-dialog');
+ if(!dialog){dialog=document.createElement('dialog');dialog.id='password-dialog';dialog.setAttribute('aria-labelledby','password-heading');dialog.innerHTML='<form><h3 id="password-heading">修改密码</h3><label>原密码<input name="currentPassword" type="password" autocomplete="current-password" required></label><label>新密码<input name="newPassword" type="password" autocomplete="new-password" minlength="8" required></label><p>至少 8 位，包含大小写字母和数字，最多 72 字节。</p><label>确认新密码<input name="confirmPassword" type="password" autocomplete="new-password" required></label><p class="password-message" role="status"></p><button type="button" class="password-cancel">取消</button><button type="submit">保存新密码</button></form>';document.body.append(dialog);dialog.querySelector('.password-cancel').onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.querySelector('form').reset());dialog.querySelector('form').onsubmit=async e=>{e.preventDefault();const button=dialog.querySelector('[type=submit]');button.disabled=true;try{await authRequest('password',Object.fromEntries(new FormData(e.target)));dialog.close();location.reload();}catch(error){dialog.querySelector('.password-message').textContent=error.message;}finally{button.disabled=false;}};}
+ dialog.querySelector('.password-message').textContent='';dialog.showModal();
+});
