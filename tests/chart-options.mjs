@@ -15,3 +15,7 @@ const constant={columns:['a'],rows:[['4'],['4']]};
 assert.equal(makeChartOption(constant,0,0,'boxplot').series[0].data[0].join(','),'4,4,4,4,4');
 assert.equal(makeChartOption(data,0,1,'heatmap').visualMap.min,-3);
 console.log('PASS: numeric parsing, missing/zero/negative values, scatter, boxplot, heatmap');
+
+assert.equal(context.inferAiPurpose("清洗缺失值",3),"clean");
+assert.equal(context.inferAiPurpose("生成 SQL",4),"sql");
+assert.equal(context.inferAiPurpose("帮我处理",4),"visualize");

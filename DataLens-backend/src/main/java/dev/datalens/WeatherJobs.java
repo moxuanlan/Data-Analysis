@@ -15,46 +15,68 @@ import java.util.regex.*;
 @RestController
 @RequestMapping("/api/data/crawl")
 class WeatherJobs {
- static final String SOURCE="https://www.tianqi.com/province/anhui/";
- static final String AGENT="DataLens/0.1 (local user-requested weather data collection)";
+ static final String AGENT="DataLens/0.1 (local user-requested web data collection)";
  final DatasetStore store;final Auth auth;final ExecutorService worker=Executors.newSingleThreadExecutor();
  WeatherJobs(DatasetStore store,Auth auth){this.store=store;this.auth=auth;}
  @javax.annotation.PostConstruct void recover(){store.db.update("UPDATE crawl_jobs SET status='INTERRUPTED',reason='服务重启中断任务，已保存数据保留；请新建任务' WHERE status IN ('QUEUED','RUNNING')");}
  @PreDestroy void stop(){worker.shutdownNow();}
- @GetMapping List<Map<String,Object>> list(HttpServletRequest r){return store.db.queryForList("SELECT * FROM crawl_jobs WHERE owner_id=? ORDER BY id DESC LIMIT 100",auth.me(r).id);}
- static class Request {public String url;public int target=100;}
+ @GetMapping List<Map<String,Object>> list(HttpServletRequest r){return store.db.queryForList("SELECT * FROM crawl_jobs WHERE owner_id=? ORDER BY id DESC LIMIT 3",auth.me(r).id);}
+ static class Request {public String url;public int target=100;public List<String> fields;}
+ @PostMapping("/inspect") Map<String,Object> inspect(@RequestBody Request body,HttpServletRequest r){
+  auth.me(r);
+  try{WebPageData page=WebPageData.fetch(body.url);return Map.of("title",page.title,"kind",page.kind,"columns",page.columns,"count",page.rows.size(),"rows",page.rows.subList(0,Math.min(5,page.rows.size())));}
+  catch(Exception e){throw DatasetStore.bad(e instanceof IllegalArgumentException?e.getMessage():"网页识别失败，请检查网址、网络或访问限制");}
+ }
  @PostMapping synchronized Map<String,Long> start(@RequestBody Request body,HttpServletRequest r){
   long user=auth.me(r).id;
-  if(!SOURCE.equals(body.url))throw DatasetStore.bad("目前仅支持已确认的安徽省天气页，不支持任意 URL、动态页面或登录页面");
-  if(body.target<1||body.target>100000)throw DatasetStore.bad("目标数量须为 1–100000；该页面通常只有十余个城市，无法保证达到目标");
+  try{WebPageData.validate(body.url);}catch(Exception e){throw DatasetStore.bad(e instanceof IllegalArgumentException?e.getMessage():"网址无法解析");}
+  if(body.fields==null||body.fields.isEmpty()||body.fields.size()>100||new HashSet<>(body.fields).size()!=body.fields.size()||body.fields.stream().anyMatch(Objects::isNull))throw DatasetStore.bad("请至少选择一个有效字段，不可重复");
+  if(body.target<1||body.target>100000)throw DatasetStore.bad("目标数量须为 1–100000；实际数量以当前网页为准");
   if(store.db.queryForObject("SELECT COUNT(*) FROM crawl_jobs WHERE status IN ('QUEUED','RUNNING')",Integer.class)>=10)throw DatasetStore.bad("采集队列已满，请等待");
   if(store.db.queryForObject("SELECT COUNT(*) FROM crawl_jobs WHERE owner_id=? AND created_at>?",Integer.class,user,java.sql.Timestamp.from(Instant.now().minusSeconds(60)))>0)throw DatasetStore.bad("请至少间隔一分钟创建采集任务");
-  var key=new GeneratedKeyHolder();store.db.update(c->{var p=c.prepareStatement("INSERT INTO crawl_jobs(owner_id,target_count,status) VALUES(?,?,'QUEUED')",new String[]{"id"});p.setLong(1,user);p.setInt(2,body.target);return p;},key);long id=Objects.requireNonNull(key.getKey()).longValue();worker.submit(()->run(id,user,body.target));return Map.of("id",id);
+  var key=new GeneratedKeyHolder();store.db.update(c->{var p=c.prepareStatement("INSERT INTO crawl_jobs(owner_id,target_count,status) VALUES(?,?,'QUEUED')",new String[]{"id"});p.setLong(1,user);p.setInt(2,body.target);return p;},key);long id=Objects.requireNonNull(key.getKey()).longValue();worker.submit(()->run(id,user,body.target,body.url.trim(),List.copyOf(body.fields)));return Map.of("id",id);
+ }
+ @DeleteMapping("/{id}") Map<String,String> delete(@PathVariable long id,HttpServletRequest r){
+  int count=store.db.update("DELETE FROM crawl_jobs WHERE id=? AND owner_id=? AND status NOT IN ('QUEUED','RUNNING')",id,auth.me(r).id);
+  if(count==0)throw DatasetStore.bad("任务不存在、无权限或仍在运行；请先取消并等待结束");
+  return Map.of("message","任务记录已删除，数据集保留");
  }
  @PostMapping("/{id}/cancel") Map<String,String> cancel(@PathVariable long id,HttpServletRequest r){int count=store.db.update("UPDATE crawl_jobs SET cancelled=TRUE WHERE id=? AND owner_id=? AND status IN ('QUEUED','RUNNING')",id,auth.me(r).id);if(count==0)throw DatasetStore.bad("任务不存在、无权限或已结束");return Map.of("message","已请求取消，已保存数据保留");}
  boolean cancelled(long id){return Thread.currentThread().isInterrupted()||Boolean.TRUE.equals(store.db.queryForObject("SELECT cancelled FROM crawl_jobs WHERE id=?",Boolean.class,id));}
  void finish(long id,String status,String reason){store.db.update("UPDATE crawl_jobs SET status=?,reason=? WHERE id=?",status,reason,id);}
- void run(long id,long user,int target){
+ void run(long id,long user,int target,String url,List<String> fields){
   try{
    if(cancelled(id)){finish(id,"CANCELLED","开始前已取消");return;}
    store.db.update("UPDATE crawl_jobs SET status='RUNNING' WHERE id=?",id);
-   String robots=get("https://www.tianqi.com/robots.txt");
-   if(!robotsAllow(robots,"/province/anhui/")){finish(id,"FAILED","网站 robots.txt 不允许本次访问");return;}
+   WebPageData page=WebPageData.fetch(url).select(fields);List<List<String>> rows=page.rows;
    if(cancelled(id)){finish(id,"CANCELLED","已取消");return;}
-   Document page=Jsoup.parse(get(SOURCE),SOURCE);String captured=Instant.now().toString();List<List<String>> rows=parse(page,captured);
-   long dataset=store.create(user,"安徽城市天气 · "+LocalDate.now(ZoneId.of("Asia/Shanghai")),SOURCE,List.of("城市","天气","最低温度_C","最高温度_C","来源网址","采集时间_UTC"),"READY",null,null);
+   long dataset=store.create(user,page.title,url,page.columns,"READY",null,null);
    store.db.update("UPDATE crawl_jobs SET dataset_id=? WHERE id=?",dataset,id);int count=0;
    for(var row:rows){if(cancelled(id)||count>=target)break;store.append(dataset,count,List.of(row));count++;store.finish(dataset,count);store.db.update("UPDATE crawl_jobs SET actual_count=? WHERE id=?",count,id);}
    if(cancelled(id))finish(id,"CANCELLED","用户取消，已保存 "+count+" 条");
-   else finish(id,count>=target?"COMPLETED":"PARTIAL",count>=target?"达到目标数量":"已遍历约定省份页面，仅有 "+count+" 条城市天气；没有分页或历史记录，不重复补足数量");
+   else finish(id,count>=target?"COMPLETED":"PARTIAL",count>=target?page.title+"：达到目标数量":page.title+"：当前页面仅提取到 "+count+" 条；未自动翻页或重复补足数量");
   }catch(Exception e){finish(id,"FAILED","采集失败："+(e instanceof IllegalArgumentException?e.getMessage():"网站访问受限、网络不可用或页面结构变化；未伪造结果"));}
  }
- static String get(String url)throws Exception{
-  URI uri=URI.create(url);if(!"https".equals(uri.getScheme())||!"www.tianqi.com".equals(uri.getHost())||!(uri.getPath().equals("/robots.txt")||uri.getPath().equals("/province/anhui/")))throw new IllegalArgumentException("来源地址不在允许范围");
-  for(InetAddress address:InetAddress.getAllByName(uri.getHost()))if(address.isAnyLocalAddress()||address.isLoopbackAddress()||address.isLinkLocalAddress()||address.isSiteLocalAddress()||address.isMulticastAddress()||(address.getAddress().length==16&&(address.getAddress()[0]&0xfe)==0xfc))throw new IllegalArgumentException("来源解析到非公网地址，拒绝访问");
+ static String get(String url)throws Exception{return get(url,0);}
+ static String get(String url,int redirects)throws Exception{
+  WebPageData.validate(url);
   var connection=Jsoup.connect(url).userAgent(AGENT).timeout(20000).maxBodySize(2*1024*1024).followRedirects(false).ignoreContentType(true);
   String proxy=System.getenv("DATALENS_HTTP_PROXY");if(proxy!=null&&!proxy.isBlank()){URI p=URI.create(proxy);if(!"http".equals(p.getScheme())||p.getUserInfo()!=null||p.getHost()==null||p.getPort()<1)throw new IllegalArgumentException("代理配置无效");connection.proxy(p.getHost(),p.getPort());}
-  var response=connection.execute();if(response.statusCode()!=200)throw new IllegalArgumentException("网站未返回正常页面（HTTP "+response.statusCode()+"），不跟随重定向或绕过限制");if(response.bodyAsBytes().length>=2*1024*1024)throw new IllegalArgumentException("来源页面超过 2 MB，未使用截断内容");return response.body();
+  var response=connection.execute();
+  if(response.header("x-tengine-error")!=null&&response.header("x-tengine-error").toLowerCase(Locale.ROOT).contains("denied"))throw new IllegalArgumentException("网站明确拒绝自动访问（UA 黑名单），并可能跳转至 404；无法读取真实页面，请改用允许访问的来源或导入文件");
+  if(Set.of(301,302,303,307,308).contains(response.statusCode())){
+   String next=redirectTarget(url,response.header("Location"),redirects);
+   return get(next,redirects+1);
+  }
+  if(response.statusCode()!=200)throw new IllegalArgumentException("网站未返回正常页面（HTTP "+response.statusCode()+"）");
+  if(response.bodyAsBytes().length>=2*1024*1024)throw new IllegalArgumentException("来源页面超过 2 MB，未使用截断内容");return response.body();
+ }
+ static String redirectTarget(String url,String location,int redirects)throws Exception{
+  if(redirects>=3||location==null||location.isBlank())throw new IllegalArgumentException("网页重定向过多或缺少目标地址");
+  URI next=URI.create(url).resolve(location);WebPageData.validate(next.toString());
+  if(!Objects.equals(URI.create(url).getHost(),next.getHost()))throw new IllegalArgumentException("网页跳转到其他网站，请直接填写目标网址重新识别");
+  if(next.getPath().matches("(?i).*/(?:404|403|login|captcha)(?:[./].*)?"))throw new IllegalArgumentException("网站跳转到错误、登录或验证页面，不能当作真实数据采集");
+  return next.toString();
  }
  static List<List<String>> parse(Document document,String captured){
   List<List<String>> result=new ArrayList<>();Set<String> cities=new HashSet<>();Pattern temperature=Pattern.compile("(-?\\d+)\\s*~\\s*(-?\\d+)\\s*℃");

@@ -15,7 +15,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 
-@SpringBootTest(properties={"spring.datasource.url=jdbc:h2:mem:dataflow;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1","spring.datasource.username=sa","spring.datasource.password=","spring.datasource.driver-class-name=org.h2.Driver"})
+@SpringBootTest(properties={"DATALENS_TENCENT_SECRET_ID=","DATALENS_TENCENT_SECRET_KEY=","DATALENS_DEEPSEEK_API_KEY=","spring.datasource.url=jdbc:h2:mem:dataflow;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1","spring.datasource.username=sa","spring.datasource.password=","spring.datasource.driver-class-name=org.h2.Driver"})
 @AutoConfigureMockMvc
 @Transactional
 class DataFlowTest {
@@ -47,6 +47,20 @@ class DataFlowTest {
   MockHttpSession other=new MockHttpSession();other.setAttribute("user",new Auth.User(90002,"other","other@example.test"));
   mvc.perform(get("/api/data/"+id+"/chart").session(other)).andExpect(status().isNotFound());
   mvc.perform(get("/api/data/"+id+"/chart").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.rows.length()").value(1000)).andExpect(jsonPath("$.total").value(1005));
+ }
+ @Test void crawlHistoryLimitsAndDeletionPreserveDatasets()throws Exception{
+  long dataset=upload("id\n001\n");confirm(dataset);
+  for(int i=0;i<5;i++)store.db.update("INSERT INTO crawl_jobs(owner_id,target_count,status,dataset_id) VALUES(90001,1,'COMPLETED',?)",dataset);
+  long latest=store.db.queryForObject("SELECT MAX(id) FROM crawl_jobs WHERE owner_id=90001",Long.class);
+  mvc.perform(get("/api/data/crawl").session(session)).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(3)).andExpect(jsonPath("$[0].id").value(latest));
+  MockHttpSession other=new MockHttpSession();other.setAttribute("user",new Auth.User(90002,"other","other@example.test"));
+  mvc.perform(delete("/api/data/crawl/"+latest).session(other).with(csrf())).andExpect(status().isBadRequest());
+  mvc.perform(delete("/api/data/crawl/"+latest).session(session)).andExpect(status().isForbidden());
+  store.db.update("UPDATE crawl_jobs SET status='RUNNING' WHERE id=?",latest);
+  mvc.perform(delete("/api/data/crawl/"+latest).session(session).with(csrf())).andExpect(status().isBadRequest());
+  store.db.update("UPDATE crawl_jobs SET status='COMPLETED' WHERE id=?",latest);
+  mvc.perform(delete("/api/data/crawl/"+latest).session(session).with(csrf())).andExpect(status().isOk());
+  assertEquals(1,store.page(dataset,0,50).size());assertEquals(4,store.db.queryForObject("SELECT COUNT(*) FROM crawl_jobs WHERE owner_id=90001",Integer.class));
  }
  @Test void csvPreservesZerosNullEmptyUnicodeQuotesAndNewlines()throws Exception{
   long id=upload("id,text,optional\n001,\"中文 ' \\\"\"quoted\"\"\nnext\",\\N\n002,,0\n");

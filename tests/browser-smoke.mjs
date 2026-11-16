@@ -81,9 +81,9 @@ try{
   assert(await evaluate("chartInstance.getOption().series.length>0"),kind);
  }
  await evaluate("document.querySelector('[data-ai-mode=deepseek]').click()");
- assert.equal(await evaluate("document.querySelector('#ai-consent').closest('label').hidden"),false);
+ assert.equal(await evaluate("document.querySelector('#ai-consent')"),null);
  await evaluate("document.querySelector('[data-ai-mode=search]').click()");
- assert.equal(await evaluate("document.querySelector('#ai-consent').closest('label').hidden"),true);
+ assert.equal(await evaluate("document.querySelector('#ai-purpose')"),null);
  await pause(1000);const shot=await cdp('Page.captureScreenshot',{format:'png'});await writeFile('/tmp/datalens-workspace-desktop.png',Buffer.from(shot.data,'base64'));
  await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  assert(await evaluate("document.documentElement.scrollWidth<=innerWidth+1"));
