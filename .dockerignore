@@ -1,5 +1,6 @@
 **
-!Dockerfile
+!deploy
+!deploy/Dockerfile
 !DataLens-backend
 !DataLens-backend/pom.xml
 !DataLens-backend/src

@@ -104,7 +104,7 @@ AI 面板直接输入问题或网址，不再单独填写检索词。无网址�
 
 Vercel 部署前端及同源 `/api/*` 代理；Railway 运行 Docker 中的 Java 服务及 MySQL。Vercel 不能直接运行本项目的 Java 常驻服务。
 
-1. Railway 创建项目，添加带持久卷的 MySQL 服务，再从本仓库根目录部署 Java 服务（读取 `railway.json` 和 `Dockerfile`）。
+1. Railway 创建项目，添加带持久卷的 MySQL 服务，再从本仓库根目录部署 Java 服务（读取 `railway.json` 和 `deploy/Dockerfile`）。
 2. Java 服务配置 `MYSQLHOST`、`MYSQLPORT`、`MYSQLDATABASE`、`MYSQLUSER`、`MYSQLPASSWORD` 为 MySQL 服务对应变量的引用。数据库须通过私有网络连接；不要开启数据库公网端口。
 3. Java 服务按需配置 `DATALENS_TENCENT_SECRET_ID`、`DATALENS_TENCENT_SECRET_KEY`、`DATALENS_DEEPSEEK_API_KEY`。密钥只填平台变量，不提交仓库。为 Java 服务生成 HTTPS 域名。
 4. Vercel 导入本仓库 main 分支、根目录，环境变量 `DATALENS_API_ORIGIN` 填上一步的 HTTPS 源站（不含路径）。使用仓库 `vercel.json` 构建部署。

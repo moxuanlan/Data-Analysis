@@ -3,3 +3,5 @@
 .env.*
 *.local.properties
 DataLens-backend/target/
+.vercel
+.env*
