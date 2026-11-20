@@ -1,6 +1,6 @@
 import {mkdir,copyFile,writeFile,rm} from 'node:fs/promises';
 const origin=new URL(process.env.DATALENS_API_ORIGIN||'');
-if(origin.protocol!=='https:'||origin.username||origin.password||origin.search||origin.hash||origin.pathname!=='/'||/^(localhost|127\.|\[::1\])/.test(origin.hostname))throw Error('DATALENS_API_ORIGIN must be the public HTTPS backend origin');
+if(!['https:','http:'].includes(origin.protocol)||origin.username||origin.password||origin.search||origin.hash||origin.pathname!=='/'||/^(localhost|127\.|\[::1\])/.test(origin.hostname))throw Error('DATALENS_API_ORIGIN must be the public HTTP or HTTPS backend origin');
 const out='.vercel/output';
 await rm(out,{recursive:true,force:true});
 await mkdir(out+'/static/vendor',{recursive:true});
