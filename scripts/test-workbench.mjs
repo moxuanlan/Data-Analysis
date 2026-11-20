@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+const listeners={},elements={};
+const $=selector=>elements[selector]??=({value:'',disabled:false,isConnected:true,onclick(){}});
+const context=vm.createContext({$,document:{addEventListener(type,fn){(listeners[type]??=[]).push(fn);}},currentUser:{id:1},showWorkspace(){},restoreSession(){},setInterval(){},toast(){},Blob,console});
+vm.runInContext(readFileSync(new URL('../Workbench.js',import.meta.url),'utf8'),context);
+const run=code=>vm.runInContext(code,context);
+run("dataState.dataset={id:7,columns:['name','amount','bad name','column_3']};dataState.teams=[{id:1,name:'Own',owner_id:1},{id:2,name:'Other',owner_id:2}]");
+assert.equal((run('sqlPanel()').match(/<select/g)||[]).length,1);
+assert.equal((run('sqlPanel()').match(/<option /g)||[]).length,4);
+assert(!run('teamOptions(true)').includes('Other'));
+run('currentUser={id:3}');assert(!run('teamPanel()').includes('id="add-member"'));run('currentUser={id:1}');
+$('#data-table').value='dataset_7';$('#data-sql-kind').value='update';$('#data-sql-key').value='name';
+const options=run('sqlOptions()');assert.equal(options.key,'name');assert.equal(new Set(options.fields.map(f=>f.name)).size,4);
+assert(!run('cleanPanel()').includes('<select'));assert(run('cleanPanel()').includes('最多 12'));
+const calls=[];context.record=(path,body)=>{calls.push({path,body});return {plan:{fields:[]},preview:{},explanation:'Ready'};};
+run('dataRequest=async(path,body)=>record(path,body);showCleanPreview=()=>{}');
+const button={id:'preview-clean',disabled:false,isConnected:true,hasAttribute(){return false;}};
+await listeners.click[0]({target:{closest(){return button;}}});
+assert.equal(calls.length,1);assert.equal(calls[0].path,'/7/ai');assert.equal(calls[0].body.purpose,'clean_auto');assert.equal(calls[0].body.useSearch,false);assert.equal($('#apply-clean').disabled,false);
+// A failed fresh preview must invalidate the previous plan.
+run("dataRequest=async()=>{throw Error('Model unavailable')}");
+await listeners.click[0]({target:{closest(){return button;}}});
+assert.equal(run('dataState.autoClean'),null);assert.equal($('#apply-clean').disabled,true);
+console.log('Workbench checks passed: SQL controls, team roles, automatic-clean routing and failed-preview safety.');

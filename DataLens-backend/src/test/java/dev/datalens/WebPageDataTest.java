@@ -4,6 +4,19 @@ import org.jsoup.Jsoup;
 import static org.junit.jupiter.api.Assertions.*;
 import java.util.*;
 class WebPageDataTest {
+ @Test void recognizesPlainCellHeaders(){
+  var p=WebPageData.parse(Jsoup.parse("<table><tr><td>商品</td><td>价格</td></tr><tr><td>苹果</td><td>10</td></tr><tr><td>商品</td><td>价格</td></tr></table>"));
+  assertEquals(List.of("商品","价格"),p.columns);assertEquals(1,p.rows.size());
+ }
+ @Test void excludesRepeatedHeadersFootersAndUnrelatedRows(){
+  var p=WebPageData.parse(Jsoup.parse("<table><thead><tr><th>商品</th><th>价格</th></tr></thead><tbody><tr><td>苹果</td><td>10</td></tr><tr><td>商品</td><td>价格</td></tr><tr><th>商品</th><th>价格</th></tr><tr><td colspan='2'>广告</td></tr></tbody><tfoot><tr><td>免责声明</td><td>更多</td></tr></tfoot></table>"));
+  assertEquals(List.of("商品","价格"),p.columns);assertEquals(List.of(List.of("苹果","10")),p.rows);
+ }
+ @Test void doesNotMixNavigationWithContentLists(){
+  var p=WebPageData.parse(Jsoup.parse("<div class='navigation'><ul><li>首页</li><li>登录</li><li>注册</li></ul></div><main><ul><li><a href='/a'>产品 A</a></li><li><a href='/b'>产品 B</a></li></ul></main>","https://example.com"));
+  assertEquals(2,p.rows.size());assertEquals("产品 A",p.rows.get(0).get(0));
+  assertThrows(IllegalArgumentException.class,()->WebPageData.parse(Jsoup.parse("<div class='navigation'><ul><li>首页</li></ul></div>")));
+ }
  @Test void fieldSelectionPreservesOrderAndNulls(){
   var p=new WebPageData("Title","table",List.of("a","b","c"),List.of(Arrays.asList("001",null,"0")));
   var selected=p.select(List.of("c","b"));assertEquals(List.of("c","b"),selected.columns);assertEquals(Arrays.asList("0",null),selected.rows.get(0));

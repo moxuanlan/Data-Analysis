@@ -64,16 +64,19 @@ try{
  await evaluate("document.querySelector('#confirm-import').click()");await until("dataState.dataset.status==='READY'");
  await evaluate("document.querySelector('#work [data-stage=\"3\"]').click()");await until("!!document.querySelector('#generate-data-sql')");
  await evaluate("document.querySelector('#generate-data-sql').click()");await until("!!dataState.sql");
- assert.match(await evaluate("document.querySelector('#data-sql-preview').textContent"),/INSERT INTO/);
+ assert.match(await evaluate("document.querySelector('#data-sql-preview').textContent"),/CREATE TABLE/);
  await evaluate("document.querySelector('#work [data-stage=\"2\"]').click()");await until("!!document.querySelector('#preview-clean')");
- await evaluate("document.querySelector('#clean-operation').value='fill';document.querySelector('#clean-operation').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#clean-column').value='amount';document.querySelector('#clean-value').value='0';document.querySelector('#preview-clean').click()");
- await until("!!dataState.cleanRule");
- assert.equal(await evaluate("document.querySelector('#clean-pattern').closest('label').hidden"),true);
- assert(await evaluate("document.querySelector('.clean-result').getBoundingClientRect().left>document.querySelector('.clean-controls').getBoundingClientRect().left"));
+ // Stub only the external model response; saving still uses the real test backend.
+ await evaluate(`window.originalDataRequest=dataRequest;dataRequest=async(path,body,...args)=>{
+  if(body?.purpose==='clean_auto')return {explanation:'Test model plan',plan:{fields:[{column:'id',kind:'keep',missing:'keep'},{column:'city',kind:'keep',missing:'keep'},{column:'amount',kind:'money',missing:'drop',reason:'Remove missing amount rows'}]},preview:{changed:1,rowCount:2,removed:1,columns:['id','city','amount'],samples:[]}};
+  return originalDataRequest(path,body,...args);
+ };document.querySelector('#preview-clean').click()`);
+ await until("!!dataState.autoClean");
+ assert.equal(await evaluate("document.querySelector('#clean-operation')"),null);
  await pause(400);await writeFile('/tmp/datalens-cleaning-desktop.png',Buffer.from((await cdp('Page.captureScreenshot',{format:'png'})).data,'base64'));
-
  await evaluate("document.querySelector('#apply-clean').click()");await until("stage===1 && dataState.dataset.parent_id!=null");
- assert.equal(await evaluate('dataState.dataset.rows[2][2]'),'0');
+ assert.equal(await evaluate('dataState.dataset.row_count'),2);
+ await evaluate('dataRequest=originalDataRequest');
  await evaluate("document.querySelector('#work [data-stage=\"4\"]').click()");await until("!!chartInstance && document.querySelector('#chart-status').textContent.includes('绘制前')");
  for(const kind of ['line','bar','rose','boxplot','scatter','heatmap']){
   await evaluate(`document.querySelector('#visual-kind').value='${kind}';document.querySelector('#visual-kind').dispatchEvent(new Event('change'))`);

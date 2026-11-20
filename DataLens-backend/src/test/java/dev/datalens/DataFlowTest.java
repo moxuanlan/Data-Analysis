@@ -28,6 +28,41 @@ class DataFlowTest {
  }
  long upload(String csv)throws Exception{return imports.upload(90001,new MockMultipartFile("file","test.csv","text/csv",csv.getBytes(StandardCharsets.UTF_8)),"UTF-8",",",0,true,"\\N");}
  void confirm(long id){store.db.update("UPDATE datasets SET status='READY' WHERE id=?",id);}
+ @Test void memberLookupHandlesLegacyEmailAndDoesNotListOwner()throws Exception{
+  store.db.update("INSERT INTO users(id,username,account,password_hash) VALUES(90002,'member',' Member@Example.test ','unused')");
+  var req=new MockHttpServletRequest();req.setSession(session);var teams=new Teams(store,auth);
+  long team=teams.create(Map.of("name","Team"),req).get("id");
+  assertThrows(Exception.class,()->teams.add(team,Map.of("account","qa@example.test"),req));
+  teams.add(team,Map.of("account","MEMBER@example.test"),req);
+  var members=teams.members(team,req);assertEquals(1,members.size());assertEquals(90002,((Number)members.get(0).get("id")).longValue());
+  var other=new MockHttpSession();other.setAttribute("user",new Auth.User(90002,"member","member@example.test"));var memberReq=new MockHttpServletRequest();memberReq.setSession(other);
+  assertThrows(Exception.class,()->teams.add(team,Map.of("account","qa@example.test"),memberReq));
+  assertTrue(teams.create(Map.of("name","Own team"),memberReq).get("id")>0);
+ }
+ @Test void automaticCleaningProcessesAllRowsAndPreservesOriginal()throws Exception{
+  long id=upload("date,amount,age\n2026/1/2,￥1200元,25\n2026年1月3日,10.125,200\n2026-1-4,20,\nambiguous,30,30\n");confirm(id);
+  AutoCleaning service=new AutoCleaning(store);AutoCleaning.Plan plan=new AutoCleaning.Plan();
+  AutoCleaning.Field date=new AutoCleaning.Field();date.column="date";date.kind="date";
+  AutoCleaning.Field amount=new AutoCleaning.Field();amount.column="amount";amount.kind="money";
+  AutoCleaning.Field age=new AutoCleaning.Field();age.column="age";age.kind="number";age.maximum="120";age.missing="drop";age.reason="年龄超出确认范围";
+  plan.fields=List.of(date,amount,age);var preview=service.run(id,90001,plan,false);
+  assertEquals(2,preview.get("removed"));assertEquals(1,preview.get("unresolvedCells"));assertEquals(4,store.page(id,0,50).size());
+  var applied=service.run(id,90001,plan,true);var rows=store.page(((Number)applied.get("id")).longValue(),0,50);
+  assertEquals(List.of("2026-01-02","CNY 1200.00","25"),rows.get(0));assertEquals("ambiguous",rows.get(1).get(0));assertEquals(4,store.page(id,0,50).size());
+  assertEquals("10.125",AutoCleaning.money("10.125"));assertThrows(Exception.class,()->AutoCleaning.date("01/02/2026"));
+  plan.fields=List.of(date);assertThrows(Exception.class,()->service.run(id,90001,plan,true));
+ }
+ @Test void automaticModelPlanScansBeyondFirstPageAndNeverUsesSearch()throws Exception{
+  StringBuilder csv=new StringBuilder("date\n");for(int i=0;i<505;i++)csv.append("2026/1/2\n");csv.append("2026/1/3\n");long id=upload(csv.toString());confirm(id);
+  var service=new DeepSeekAdvice(store,auth,sql,cleaning,dataApi,search,new AutoCleaning(store),"fixture-token","fixture-model");
+  var server=org.springframework.test.web.client.MockRestServiceServer.createServer(service.http);
+  String answer=store.encode(Map.of("cleanPlan",Map.of("fields",List.of(Map.of("column","date","kind","date","reason","统一日期")))));
+  String response=store.encode(Map.of("choices",List.of(Map.of("finish_reason","stop","message",Map.of("content",answer)))));
+  server.expect(org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo("https://api.deepseek.com/chat/completions")).andExpect(request->{String sent=((org.springframework.mock.http.client.MockClientHttpRequest)request).getBodyAsString();assertTrue(sent.contains("2026/1/3"));assertTrue(sent.contains("fullDatasetProfile"));}).andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess(response,org.springframework.http.MediaType.APPLICATION_JSON));
+  var body=new DeepSeekAdvice.Request();body.purpose="clean_auto";body.question="自动清洗";body.consent=true;
+  var request=new MockHttpServletRequest();request.setSession(session);var result=service.advise(id,body,request);
+  assertEquals(506,((Map<?,?>)result.get("preview")).get("changed"));assertEquals("2026/1/3",store.page(id,505,1).get(0).get(0));assertEquals(true,result.get("samplesSent"));server.verify();
+ }
  @Test void authenticationCsrfAndOwnershipAreEnforced()throws Exception{
   long id=upload("id,text\n001,hello\n");
   mvc.perform(get("/api/data")).andExpect(status().isUnauthorized());
@@ -148,7 +183,7 @@ class DataFlowTest {
  }
  @Test void modelUsesConsentAndValidatedPlansWithoutSendingRowsByDefault()throws Exception{
   long id=upload("id,private_text\n001,PRIVATE_SAMPLE_MUST_NOT_LEAVE\n");confirm(id);
-  var service=new DeepSeekAdvice(store,auth,sql,cleaning,dataApi,search,"fixture-token","fixture-model");
+  var service=new DeepSeekAdvice(store,auth,sql,cleaning,dataApi,search,new AutoCleaning(store),"fixture-token","fixture-model");
   var server=org.springframework.test.web.client.MockRestServiceServer.bindTo(service.http).build();
   String answer=store.encode(Map.of("explanation","按字段查询","sqlOptions",Map.of("kind","select")));
   String response=store.encode(Map.of("choices",List.of(Map.of("finish_reason","stop","message",Map.of("content",answer)))));
@@ -162,7 +197,7 @@ class DataFlowTest {
  }
  @Test void modelCanSuggestAddedTimeColumnWithoutChangingDataset()throws Exception{
   long id=upload("name,url\nitem,https://example.com\n");confirm(id);
-  var service=new DeepSeekAdvice(store,auth,sql,cleaning,dataApi,search,"fixture-token","fixture-model");
+  var service=new DeepSeekAdvice(store,auth,sql,cleaning,dataApi,search,new AutoCleaning(store),"fixture-token","fixture-model");
   var proposal=store.json.valueToTree(Map.of("sqlOptions",Map.of("kind","create","fields",List.of(Map.of("name","name","type","TEXT"),Map.of("name","url","type","TEXT"),Map.of("name","created_at","type","DATETIME")))));
   var result=service.validate(id,90001,"sql",proposal);
   assertTrue(result.get("reference").toString().contains("`created_at` DATETIME NULL"));
@@ -171,7 +206,7 @@ class DataFlowTest {
  }
  @Test void modelCleaningSuggestionsNeverMutateUntilConfirmation()throws Exception{
   long id=upload("id,amount\n1,\\N\n");confirm(id);
-  var service=new DeepSeekAdvice(store,auth,sql,cleaning,dataApi,search,"fixture-token","fixture-model");
+  var service=new DeepSeekAdvice(store,auth,sql,cleaning,dataApi,search,new AutoCleaning(store),"fixture-token","fixture-model");
   var proposal=store.json.readTree("{\"explanation\":\"建议填充\",\"cleanRule\":{\"operation\":\"fill\",\"column\":\"amount\",\"value\":\"0\"}}");
   var result=service.validate(id,90001,"clean",proposal);assertNotNull(result.get("preview"));assertNull(store.page(id,0,1).get(0).get(1));
  }

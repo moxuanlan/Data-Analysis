@@ -14,8 +14,9 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/data")
 class DataApi {
+ final AutoCleaning autoCleaning;
  final DatasetStore store;final Imports imports;final Cleaning cleaning;final SqlExport sql;final Auth auth;
- DataApi(DatasetStore store,Imports imports,Cleaning cleaning,SqlExport sql,Auth auth){this.store=store;this.imports=imports;this.cleaning=cleaning;this.sql=sql;this.auth=auth;}
+ DataApi(DatasetStore store,Imports imports,Cleaning cleaning,SqlExport sql,Auth auth,AutoCleaning autoCleaning){this.autoCleaning=autoCleaning;this.store=store;this.imports=imports;this.cleaning=cleaning;this.sql=sql;this.auth=auth;}
  long user(HttpServletRequest request){return auth.me(request).id;}
  @GetMapping List<Map<String,Object>> list(HttpServletRequest request){return store.db.queryForList("SELECT id,name,source_name,row_count,status,parent_id,created_at FROM datasets WHERE owner_id=? OR (status='READY' AND EXISTS (SELECT 1 FROM dataset_shares s JOIN team_members m ON s.team_id=m.team_id WHERE s.dataset_id=datasets.id AND m.user_id=?)) ORDER BY id DESC LIMIT 500",user(request),user(request));}
  @GetMapping("/{id}") Map<String,Object> page(@PathVariable long id,@RequestParam(defaultValue="0") int page,HttpServletRequest request){
@@ -28,6 +29,7 @@ class DataApi {
  }
  @PostMapping("/{id}/confirm") Map<String,Object> confirm(@PathVariable long id,HttpServletRequest request){long owner=user(request);store.owned(id,owner);store.db.update("UPDATE datasets SET status='READY' WHERE id=? AND owner_id=?",id,owner);return store.owned(id,owner);}
  @DeleteMapping("/{id}") @Transactional Map<String,String> delete(@PathVariable long id,HttpServletRequest request){long owner=user(request);store.owned(id,owner);store.db.update("DELETE FROM datasets WHERE id=? AND owner_id=?",id,owner);return Map.of("message","数据集已删除");}
+ @PostMapping("/{id}/clean/auto/apply") Map<String,Object> autoApply(@PathVariable long id,@RequestBody AutoCleaning.Plan plan,HttpServletRequest request){return autoCleaning.run(id,user(request),plan,true);}
  @PostMapping("/{id}/clean/preview") Map<String,Object> preview(@PathVariable long id,@RequestBody Cleaning.Rule rule,HttpServletRequest request){return cleaning.run(id,user(request),rule,false);}
  @PostMapping("/{id}/clean/apply") Map<String,Object> apply(@PathVariable long id,@RequestBody Cleaning.Rule rule,HttpServletRequest request){return cleaning.run(id,user(request),rule,true);}
  @PostMapping("/{id}/sql") void sql(@PathVariable long id,@RequestBody SqlExport.Options options,HttpServletRequest request,HttpServletResponse response)throws IOException{

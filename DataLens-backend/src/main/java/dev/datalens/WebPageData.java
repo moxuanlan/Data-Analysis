@@ -34,19 +34,24 @@ final class WebPageData {
  }
  static WebPageData parse(Document doc){
   String title=doc.title().strip();if(title.isEmpty()){Element h=doc.selectFirst("h1");title=h==null?"网页数据":h.text();}if(title.length()>200)title=title.substring(0,200);
-  doc.select("script,style,noscript,nav,footer,header,form,[hidden],[aria-hidden=true]").remove();
+  doc.select("script,style,noscript,nav,footer,header,form,tfoot,aside,[role=navigation],.navigation,.nav,.menu,.breadcrumb,.pagination,.advertisement,.advert,[hidden],[aria-hidden=true]").remove();
   if(!doc.select("ul.raweather760 > li").isEmpty())return new WebPageData(title,"城市天气",List.of("城市","天气","最低温度_C","最高温度_C","来源网址","采集时间_UTC"),WeatherJobs.parse(doc,Instant.now().toString()));
   Element chosen=null;int count=0;
   for(Element table:doc.select("table")){int n=table.select("tr").size();if(n>count&&table.select("table").size()==1){chosen=table;count=n;}}
   if(chosen!=null&&count>1){
    List<List<String>> rows=new ArrayList<>();List<String> columns=new ArrayList<>();boolean first=true;int width=0;
    for(Element tr:chosen.select("tr")){
+    if(!first&&!columns.isEmpty()&&!tr.select("[colspan]:not([colspan=1]),[rowspan]:not([rowspan=1])").isEmpty())continue;
     List<String> cells=new ArrayList<>();boolean heading=false;
     for(Element cell:tr.children())if(cell.tagName().equals("th")||cell.tagName().equals("td")){
      if(!cell.attr("rowspan").matches("|1")||!cell.attr("colspan").matches("|1"))throw new IllegalArgumentException("检测到合并单元格，请先导出为 CSV/Excel 后导入");
      cells.add(cell.text());heading|=cell.tagName().equals("th");
     }
-    if(cells.isEmpty())continue;width=Math.max(width,cells.size());
+    if(cells.isEmpty())continue;
+    if(first&&cells.size()>1&&cells.stream().allMatch(v->v.matches("(?i)(名称|姓名|日期|时间|价格|金额|数量|编号|内容|链接|城市|商品|产品|name|date|time|price|amount|quantity|id|url|title)")))heading=true;
+    if(!first&&(cells.equals(columns)||heading&&tr.children().stream().allMatch(c->c.tagName().equals("th"))))continue;
+    if(!columns.isEmpty()&&cells.size()>columns.size())continue;
+    width=Math.max(width,cells.size());
     if(first&&heading)columns.addAll(cells);else rows.add(cells);first=false;
    }
    if(width>100)throw new IllegalArgumentException("网页表格超过 100 列");
@@ -56,8 +61,14 @@ final class WebPageData {
   }
   Element main=doc.selectFirst("main,article,[role=main]");if(main==null)main=doc.body();
   List<List<String>> rows=new ArrayList<>();
-  for(Element item:main.select("li")){if(!item.select("li li").isEmpty())continue;String text=item.text();if(text.isBlank())continue;Element link=item.selectFirst("a[href]");rows.add(List.of(text,link==null?"":link.absUrl("href")));}
-  if(!rows.isEmpty())return new WebPageData(title,"页面列表",List.of("内容","链接"),rows);
+  Element list=null;int largest=0;
+  for(Element candidate:main.select("ul,ol")){int size=(int)candidate.children().stream().filter(e->e.tagName().equals("li")&&e.select("li").size()==1).count();if(size>largest){list=candidate;largest=size;}}
+  if(list!=null)for(Element item:list.children()){
+   if(!item.tagName().equals("li")||item.select("li").size()!=1)continue;
+   String text=item.text();if(text.isBlank())continue;Element link=item.selectFirst("a[href]");
+   rows.add(List.of(text,link==null?"":link.absUrl("href")));
+  }
+  if(!rows.isEmpty())return new WebPageData(title,"已识别的单一内容列表",List.of("内容","链接"),rows);
   for(Element paragraph:main.select("p")){if(!paragraph.text().isBlank())rows.add(List.of(paragraph.text()));}
   if(!rows.isEmpty())return new WebPageData(title,"正文段落",List.of("正文"),rows);
   throw new IllegalArgumentException("没有识别到静态表格、列表或正文；页面可能需要 JavaScript 或登录");
