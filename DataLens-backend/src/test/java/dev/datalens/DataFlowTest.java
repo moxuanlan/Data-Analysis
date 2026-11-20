@@ -160,6 +160,15 @@ class DataFlowTest {
   var malicious=store.json.readTree("{\"sqlOptions\":{\"kind\":\"update\"}}");assertThrows(Exception.class,()->service.validate(id,90001,"sql",malicious));
   var invented=store.json.readTree("{\"sqlOptions\":{\"kind\":\"select\",\"filterColumn\":\"invented\"}}");assertThrows(Exception.class,()->service.validate(id,90001,"sql",invented));
  }
+ @Test void modelCanSuggestAddedTimeColumnWithoutChangingDataset()throws Exception{
+  long id=upload("name,url\nitem,https://example.com\n");confirm(id);
+  var service=new DeepSeekAdvice(store,auth,sql,cleaning,dataApi,search,"fixture-token","fixture-model");
+  var proposal=store.json.valueToTree(Map.of("sqlOptions",Map.of("kind","create","fields",List.of(Map.of("name","name","type","TEXT"),Map.of("name","url","type","TEXT"),Map.of("name","created_at","type","DATETIME")))));
+  var result=service.validate(id,90001,"sql",proposal);
+  assertTrue(result.get("reference").toString().contains("`created_at` DATETIME NULL"));
+  assertEquals(2,store.columns(store.owned(id,90001)).size());
+  assertFalse(result.containsKey("options"));
+ }
  @Test void modelCleaningSuggestionsNeverMutateUntilConfirmation()throws Exception{
   long id=upload("id,amount\n1,\\N\n");confirm(id);
   var service=new DeepSeekAdvice(store,auth,sql,cleaning,dataApi,search,"fixture-token","fixture-model");
