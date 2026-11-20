@@ -76,7 +76,17 @@ $('#user-logout').onclick=async()=>{await originalLogout();if(!demoLoggedIn){dat
 function teamOptions(){return dataState.teams.map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');}
 function teamPanel(){return `<section class="panel"><h3>团队 · 独立账号、只读共享</h3><p>团队创建者可添加已注册成员。数据所有者选择共享的版本；成员只能查看、下载，不能删除或清洗原数据。</p>${input('新团队名称','new-team-name')}<button id="create-team">创建团队</button><label>选择团队<select id="manage-team">${teamOptions()}</select></label>${input('成员注册账号（邮箱／手机号）','member-account')}<button id="add-member">添加成员</button><button id="list-members">查看成员</button><div id="members"></div></section>`;}
 function teamSharePanel(){return `<section class="panel"><label>共享到团队<select id="share-team">${teamOptions()}</select></label><button id="share-dataset">只读共享此版本</button><button id="unshare-dataset">撤销此团队的共享</button></section>`;}
-async function loadJobs(){const target=$('#crawl-jobs');if(!target)return;const jobs=await dataRequest('/crawl');if(!target.isConnected)return;const selected=new Set([...target.querySelectorAll('[data-job-select]:checked')].map(x=>x.value));target.innerHTML=jobs.slice(0,3).map(j=>`<article><label><input type="checkbox" data-job-select value="${j.id}" ${selected.has(String(j.id))?'checked':''} ${['QUEUED','RUNNING'].includes(j.status)?'disabled':''}>选择此记录</label><b>任务 #${j.id} · ${escapeHtml(j.status)}</b><p>目标 ${j.target_count} 条，实际 ${j.actual_count} 条</p><p>${escapeHtml(j.reason||'正在等待或读取来源，没有可靠总量，不显示虚假进度百分比。')}</p>${j.dataset_id?`<button data-open-dataset="${j.dataset_id}">查看已保存结果</button>`:''}${['QUEUED','RUNNING'].includes(j.status)?`<button data-cancel-job="${j.id}">取消</button>`:''}</article>`).join('')||'暂无采集任务';}
+const pendingCrawlJobs=new Set();
+function notifyCrawlCompletion(jobs){
+ for(const job of jobs){
+  const id=String(job.id);
+  if(['QUEUED','RUNNING'].includes(job.status)){pendingCrawlJobs.add(id);continue;}
+  if(!pendingCrawlJobs.delete(id))continue;
+  if(job.status==='COMPLETED')toast(`数据已爬取完成，共 ${job.actual_count} 条，可点击“查看已保存结果”。`);
+  else if(job.status==='PARTIAL')toast(`数据采集已结束，共 ${job.actual_count} 条，未达到目标数量，可查看已保存结果。`);
+ }
+}
+async function loadJobs(){const target=$('#crawl-jobs');if(!target)return;const jobs=await dataRequest('/crawl');notifyCrawlCompletion(jobs);if(!target.isConnected)return;const selected=new Set([...target.querySelectorAll('[data-job-select]:checked')].map(x=>x.value));target.innerHTML=jobs.slice(0,3).map(j=>`<article><label><input type="checkbox" data-job-select value="${j.id}" ${selected.has(String(j.id))?'checked':''} ${['QUEUED','RUNNING'].includes(j.status)?'disabled':''}>选择此记录</label><b>任务 #${j.id} · ${escapeHtml(j.status)}</b><p>目标 ${j.target_count} 条，实际 ${j.actual_count} 条</p><p>${escapeHtml(j.reason||'正在等待或读取来源，没有可靠总量，不显示虚假进度百分比。')}</p>${j.dataset_id?`<button data-open-dataset="${j.dataset_id}">查看已保存结果</button>`:''}${['QUEUED','RUNNING'].includes(j.status)?`<button data-cancel-job="${j.id}">取消</button>`:''}</article>`).join('')||'暂无采集任务';}
 document.addEventListener('click',async event=>{
  const b=event.target.closest('button');if(!b)return;const id=b.id;
  const actions=['create-team','add-member','list-members','share-dataset','unshare-dataset','inspect-crawl','start-crawl','refresh-jobs','delete-crawl-jobs'];
@@ -95,7 +105,7 @@ document.addEventListener('click',async event=>{
    if(!$('#crawl-url')||$('#crawl-url').value.trim()!==url)return;
    dataState.crawlUrl=url;$('#crawl-title').textContent=page.title;$('#crawl-preview').innerHTML='<p>'+escapeHtml(page.kind)+' · 识别到 '+page.count+' 条，预览前 5 条</p>'+'<fieldset id="crawl-fields"><legend>选择需要采集的字段（可多选）</legend>'+page.columns.map(c=>'<label><input type="checkbox" name="crawl-field" value="'+escapeHtml(c)+'" checked>'+escapeHtml(c)+'</label>').join('')+'</fieldset>'+realTable(page);$('#start-crawl').disabled=false;
   }
-  if(id==='start-crawl'){if(dataState.crawlUrl!==$('#crawl-url').value.trim())throw new Error('网址已变化，请先重新识别');await dataRequest('/crawl',{url:$('#crawl-url').value,target:Number($('#crawl-target').value),fields:[...document.querySelectorAll('[name="crawl-field"]:checked')].map(x=>x.value)});await loadJobs();}
+  if(id==='start-crawl'){if(dataState.crawlUrl!==$('#crawl-url').value.trim())throw new Error('网址已变化，请先重新识别');const job=await dataRequest('/crawl',{url:$('#crawl-url').value,target:Number($('#crawl-target').value),fields:[...document.querySelectorAll('[name="crawl-field"]:checked')].map(x=>x.value)});pendingCrawlJobs.add(String(job.id));await loadJobs();}
   if(id==='delete-crawl-jobs'){
    const ids=[...document.querySelectorAll('[data-job-select]:checked')].map(x=>x.value);if(!ids.length)throw new Error('请先勾选需要删除的记录');
    if(!confirm('删除选中的 '+ids.length+' 条任务记录？已采集数据保留。'))return;
