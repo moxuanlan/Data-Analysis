@@ -112,11 +112,11 @@ async function requestAdvice(button){
  button.disabled=true;const answer=$('#work #answer'),dataset=dataState.dataset;
  try{
   const question=button.closest('.ai').querySelector('textarea').value;
-  const purpose=dataState.aiMode==='search'||!dataset?'search':inferAiPurpose(question,stage);
+  const purpose=dataState.aiMode==='search'?'search':inferAiPurpose(question,stage);
   if(purpose==='search'){answer.textContent='正在检索并读取网页，整理回答…';const result=await dataRequest('/search/answer',{query:question});if(answer.isConnected)answer.innerHTML='<p style="white-space:pre-wrap">'+escapeHtml(result.answer||result.message)+'</p>'+sourceLinks(result.pages);return;}
   if(!dataset||dataset.status!=='READY')throw new Error('请先选择已确认的数据集');
   if(dataset.readOnly)throw new Error('共享数据只读；只有所有者可以将其发送给外部模型');
-  const request={purpose,question,useSearch:true,consent:true,includeSamples:true};
+  const request={purpose,question,useSearch:false,consent:true,includeSamples:true};
 
   answer.textContent='正在请求服务，数据尚未修改…';
   const result=await dataRequest('/'+dataset.id+'/ai',request);
