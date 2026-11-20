@@ -33,7 +33,9 @@ class WeatherJobs {
   if(body.fields==null||body.fields.isEmpty()||body.fields.size()>100||new HashSet<>(body.fields).size()!=body.fields.size()||body.fields.stream().anyMatch(Objects::isNull))throw DatasetStore.bad("请至少选择一个有效字段，不可重复");
   if(body.target<1||body.target>100000)throw DatasetStore.bad("目标数量须为 1–100000；实际数量以当前网页为准");
   if(store.db.queryForObject("SELECT COUNT(*) FROM crawl_jobs WHERE status IN ('QUEUED','RUNNING')",Integer.class)>=10)throw DatasetStore.bad("采集队列已满，请等待");
-  if(store.db.queryForObject("SELECT COUNT(*) FROM crawl_jobs WHERE owner_id=? AND created_at>?",Integer.class,user,java.sql.Timestamp.from(Instant.now().minusSeconds(60)))>0)throw DatasetStore.bad("请至少间隔一分钟创建采集任务");
+  // Compare against the same database clock that creates task timestamps.
+  Long elapsed=store.db.queryForObject("SELECT TIMESTAMPDIFF(SECOND,MAX(created_at),CURRENT_TIMESTAMP) FROM crawl_jobs WHERE owner_id=?",Long.class,user);
+  if(elapsed!=null&&elapsed<60)throw DatasetStore.bad("请等待 "+(60-Math.max(0,elapsed))+" 秒后再创建采集任务");
   var key=new GeneratedKeyHolder();store.db.update(c->{var p=c.prepareStatement("INSERT INTO crawl_jobs(owner_id,target_count,status) VALUES(?,?,'QUEUED')",new String[]{"id"});p.setLong(1,user);p.setInt(2,body.target);return p;},key);long id=Objects.requireNonNull(key.getKey()).longValue();worker.submit(()->run(id,user,body.target,body.url.trim(),List.copyOf(body.fields)));return Map.of("id",id);
  }
  @DeleteMapping("/{id}") Map<String,String> delete(@PathVariable long id,HttpServletRequest r){
