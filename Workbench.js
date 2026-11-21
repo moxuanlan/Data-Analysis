@@ -19,7 +19,7 @@ async function dataRequest(path='', body, method, binary=false) {
 }
 function saveFile(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
 function realTable(dataset){return `<div class="tablewrap"><table><thead><tr>${dataset.columns.map(c=>'<th>'+escapeHtml(c)+'</th>').join('')}</tr></thead><tbody>${dataset.rows.map(row=>'<tr>'+row.map(v=>'<td>'+(v===null?'<em>NULL</em>':v===''?'<em>空字符串</em>':escapeHtml(v))+'</td>').join('')+'</tr>').join('')}</tbody></table></div>`;}
-function dataHeader(){const d=dataState.dataset;return `<div class="panel"><label>数据集 <select id="dataset-choice"><option value="">选择数据集</option>${dataState.list.map(x=>`<option value="${x.id}" ${d?.id===x.id?'selected':''}>${escapeHtml(x.name)} · ${x.row_count} 行 · ${x.status==='DRAFT'?'待确认':'已保存'}</option>`).join('')}</select></label><button id="reload-datasets">刷新列表</button>${d&&!d.readOnly?'<button id="delete-dataset">删除所选数据集</button>':''}${d?`<p>${escapeHtml(d.source_name)} · ${d.row_count} 行 · ${d.columns.length} 字段 · ${escapeHtml(d.created_at)}${d.parent_id?' · 原始版本 #'+d.parent_id:''}</p>`:''}<p id="data-message" role="status"></p></div>`;}
+function dataHeader(){const d=dataState.dataset;return `<div class="panel"><label>数据集 <select id="dataset-choice"><option value="">选择数据集</option>${dataState.list.map(x=>`<option value="${x.id}" ${d?.id===x.id?'selected':''}>${escapeHtml(x.name)} · ${x.row_count} 行 · ${x.status==='DRAFT'?'待确认':'已保存'}</option>`).join('')}</select></label><button id="reload-datasets">刷新列表</button>${d&&!d.readOnly?'<button id="rename-dataset">重命名</button><button id="delete-dataset">删除所选数据集</button>':''}${d?`<p>${escapeHtml(d.source_name)} · ${d.row_count} 行 · ${d.columns.length} 字段 · ${escapeHtml(d.created_at)}${d.parent_id?' · 原始版本 #'+d.parent_id:''}</p>`:''}<p id="data-message" role="status"></p></div>`;}
 function importPanel(){return `<div class="importgrid"><section class="importbox"><h3>导入 CSV / Excel</h3><p>最多 20 MB、10 万行、100 字段。保留文本和前导零。Excel 数字使用原始数值，日期序列号需明确清洗；不执行公式。</p><input id="data-file" type="file" accept=".csv,.xlsx" aria-label="选择文件"><label>CSV 编码<select id="data-encoding"><option>UTF-8</option><option>GB18030</option></select></label><label>CSV 分隔符<select id="data-delimiter"><option value=",">逗号</option><option value=";">分号</option><option value="tab">制表符</option></select></label>${input('Excel 工作表序号（从 1 开始）','data-sheet','1','number')}<p>默认使用首行作为字段名。</p>${input('NULL 标记（留空表示 CSV 空字段保留为空字符串）','data-null')}<button class="primary" id="upload-data">解析并预览</button></section><section class="importbox"><h3 id="crawl-title">网页数据采集</h3><p>输入公开网页地址，先识别标题并预览数据。支持静态表格、列表和正文；不自动翻页，不支持登录或 JavaScript 动态加载内容。</p>${input('来源网址','crawl-url','','url')}${input('最多采集条数','crawl-target','100','number')}<button id="inspect-crawl">识别标题与数据</button><div id="crawl-preview" role="status"></div><button id="start-crawl" disabled>开始采集</button><button id="refresh-jobs">刷新任务</button><h4>最近三条任务</h4><button id="delete-crawl-jobs">删除选中记录</button><p>仅删除记录，已采集的数据集保留。</p><div id="crawl-jobs" role="status"></div></section></div>`;}
 function cleanPanel(){return `<section class="panel"><h3>DeepSeek 智能清洗</h3><p>一次识别缺失值、异常值、日期和金额格式，预览整个数据集的处理结果，确认后保存新版本。</p><p>点击识别会向 DeepSeek 发送字段名、全量统计及每列最多 12 个不同样例（每格最多 120 字符）。无法可靠判断的值会保留并说明，金额不换算币种。</p><button class="primary" id="preview-clean">智能识别并预览</button><button id="apply-clean" disabled>确认保存新版本</button><p id="clean-status" role="status"></p><div id="clean-plan"></div></section><section id="clean-preview" class="panel" role="status"><h3>清洗前后对比</h3><p>识别后展示处理方案、影响行数及样例。原始数据始终保留。</p></section>`;}
 function sqlPanel(){return `<p>选择语句类型，点击获取即可查看并下载完整 SQL。请先在本地创建并选择数据库；脚本不会自动执行。</p><div class="sql-toolbar"><label>SQL 语句<select id="data-sql-kind"><option value="create">CREATE · 建表</option><option value="update">UPDATE · 更新</option><option value="insert">INSERT · 导入</option><option value="select">SELECT · 查询</option></select></label>${input('目标表名','data-table','dataset_'+dataState.dataset.id)}<label id="sql-key-label" hidden>UPDATE 匹配字段<input id="data-sql-key" placeholder="填写具有唯一约束的原字段名"></label><button class="primary" id="generate-data-sql">获取 SQL</button><button id="save-data-sql" disabled>下载 .sql</button></div><p id="sql-key-help" hidden>可用字段：${dataState.dataset.columns.map(escapeHtml).join('、')}。匹配字段须在目标数据库有唯一约束；空值或重复值会阻止生成。</p><p>字段默认使用文本类型，保留前导零和原始精度。SELECT 查询全部字段，INSERT / UPDATE 包含整个数据集。</p><p id="sql-size" role="status"></p><pre id="data-sql-preview">选择语句类型后点击“获取 SQL”。</pre>`;}
@@ -48,7 +48,7 @@ document.addEventListener('click',async event=>{
  const b=event.target.closest('button');if(!b)return;
  if(b.hasAttribute('data-ask')&&b.closest('#work')){event.stopImmediatePropagation();await requestAdvice(b);return;}
  const id=b.id,d=dataState.dataset;
- const actions=['reload-datasets','upload-data','data-prev','data-next','confirm-import','delete-dataset','preview-clean','apply-clean','generate-data-sql','save-data-sql','download-csv'];
+ const actions=['reload-datasets','upload-data','data-prev','data-next','confirm-import','rename-dataset','delete-dataset','preview-clean','apply-clean','generate-data-sql','save-data-sql','download-csv'];
  if(!actions.includes(id))return;
  b.disabled=true;
  try{
@@ -60,6 +60,13 @@ document.addEventListener('click',async event=>{
   }
   if(id==='data-prev'||id==='data-next')await selectDataset(d.id,d.page+(id==='data-prev'?-1:1));
   if(id==='confirm-import'){await dataRequest('/'+d.id+'/confirm',{});dataState.list=await dataRequest();await selectDataset(d.id);toast('导入已确认');}
+  if(id==='rename-dataset'){
+   const name=prompt('输入新的数据集名称',d.name)?.trim();
+   if(name===undefined||name===d.name)return;
+   if(!name||Array.from(name).length>255)throw Error('名称须为 1 至 255 个字符');
+   await dataRequest('/'+d.id+'/rename',{name});
+   dataState.list=await dataRequest();await selectDataset(d.id,d.page);toast('数据集已重命名');
+  }
   if(id==='delete-dataset'&&confirm('确定永久删除当前数据集？其他已保存版本不受影响。')){await dataRequest('/'+d.id,undefined,'DELETE');dataState.dataset=null;await refreshDatasets();}
   if(id==='preview-clean'){
    dataState.autoClean=null;$('#apply-clean').disabled=true;$('#clean-status').textContent='DeepSeek 正在识别并对全量数据预览，请稍候…';
@@ -126,10 +133,22 @@ document.addEventListener('click',async event=>{
 },true);
 setInterval(()=>{if(!document.hidden&&!$('#work').hidden&&stage===0)loadJobs().catch(()=>{});},5000);
 function sourceLinks(pages){return (pages||[]).map((p,i)=>`<article><p>[${i+1}] ${escapeHtml(p.readStatus||'检索摘要')}</p><a target="_blank" rel="noopener noreferrer" href="${escapeHtml(p.url)}">${escapeHtml(p.title)}</a><p>${escapeHtml(p.summary)}</p><small>${escapeHtml(p.date)}</small></article>`).join('');}
+const adviceResults=new WeakMap();
+document.addEventListener('keydown',event=>{
+ if(!event.target.matches('#work .ai textarea')||event.key!=='Enter'||event.shiftKey||event.isComposing||event.keyCode===229)return;
+ event.preventDefault();
+ if(!event.repeat)event.target.closest('.ai').querySelector('[data-ask]').click();
+});
 async function requestAdvice(button){
- button.disabled=true;const answer=$('#work #answer'),dataset=dataState.dataset;
+ const input=button.closest('.ai').querySelector('textarea'),question=input.value.trim();
+ if(!question||button.disabled){input.focus();return;}
+ button.disabled=true;input.value='';input.focus();
+ const chat=$('#work #answer'),dataset=dataState.dataset;
+ if(!chat.children.length)chat.replaceChildren();
+ const message=document.createElement('p'),answer=document.createElement('div');
+ message.textContent='我：'+question;message.style.whiteSpace='pre-wrap';
+ chat.append(message,answer);chat.setAttribute('aria-live','polite');
  try{
-  const question=button.closest('.ai').querySelector('textarea').value;
   const purpose=dataState.aiMode==='search'?'search':inferAiPurpose(question,stage);
   if(purpose==='search'){answer.textContent='正在检索并读取网页，整理回答…';const result=await dataRequest('/search/answer',{query:question});if(answer.isConnected)answer.innerHTML='<p style="white-space:pre-wrap">'+escapeHtml(result.answer||result.message)+'</p>'+sourceLinks(result.pages);return;}
   if(!dataset||dataset.status!=='READY')throw new Error('请先选择已确认的数据集');
@@ -139,17 +158,17 @@ async function requestAdvice(button){
   answer.textContent='正在请求服务，数据尚未修改…';
   const result=await dataRequest('/'+dataset.id+'/ai',request);
   if(!answer.isConnected||dataState.dataset?.id!==dataset.id)return;
-  dataState.ai={...result,datasetId:dataset.id};
-  answer.innerHTML='<p>'+escapeHtml(result.explanation)+'</p>'+(result.needsClarification?'<p>需要补充：'+escapeHtml(result.needsClarification)+'</p>':'')+(result.sqlPreview?'<pre>'+escapeHtml(result.sqlPreview)+'</pre><button id="ai-download-sql">下载已校验的完整 SQL</button>':'')+(result.rule?'<pre>'+escapeHtml(JSON.stringify(result.preview,null,2))+'</pre><button id="ai-apply-clean">确认生成清洗版本</button>':'')+(result.reference?'<pre>'+escapeHtml(result.reference)+'</pre><button id="ai-download-reference">下载参考内容</button>':'')+'<p>'+escapeHtml(result.validation||'参考建议，未执行')+'</p>'+sourceLinks(result.sources);
+  adviceResults.set(answer,{...result,datasetId:dataset.id});
+  answer.innerHTML='<p>'+escapeHtml(result.explanation)+'</p>'+(result.needsClarification?'<p>需要补充：'+escapeHtml(result.needsClarification)+'</p>':'')+(result.sqlPreview?'<pre>'+escapeHtml(result.sqlPreview)+'</pre><button data-ai-action="ai-download-sql">下载已校验的完整 SQL</button>':'')+(result.rule?'<pre>'+escapeHtml(JSON.stringify(result.preview,null,2))+'</pre><button data-ai-action="ai-apply-clean">确认生成清洗版本</button>':'')+(result.reference?'<pre>'+escapeHtml(result.reference)+'</pre><button data-ai-action="ai-download-reference">下载参考内容</button>':'')+'<p>'+escapeHtml(result.validation||'参考建议，未执行')+'</p>'+sourceLinks(result.sources);
  }catch(e){toast(e.message);if(answer.isConnected)answer.textContent=e.message;}finally{if(button.isConnected)button.disabled=false;}
 }
 document.addEventListener('click',async event=>{
- const b=event.target.closest('button');if(!b||!['ai-download-sql','ai-apply-clean','ai-download-reference'].includes(b.id))return;
- const ai=dataState.ai;if(!ai||dataState.dataset?.id!==ai.datasetId)return;b.disabled=true;
+ const b=event.target.closest('button');if(!b||!['ai-download-sql','ai-apply-clean','ai-download-reference'].includes(b.dataset.aiAction))return;
+ const ai=adviceResults.get(b.parentElement);if(!ai||dataState.dataset?.id!==ai.datasetId)return;b.disabled=true;
  try{
-  if(b.id==='ai-download-sql')saveFile(await dataRequest('/'+ai.datasetId+'/sql',ai.options,undefined,true),'dataset-'+ai.datasetId+'-ai.sql');
-  if(b.id==='ai-apply-clean'&&confirm('按刚才预览的规则生成新版本？原始数据将保留。')){const result=await dataRequest('/'+ai.datasetId+'/clean/apply',ai.rule);dataState.list=await dataRequest();stage=1;await selectDataset(result.id);}
-  if(b.id==='ai-download-reference')saveFile(new Blob([ai.reference],{type:'text/plain;charset=utf-8'}),'ai-visualization-reference.txt');
+  if(b.dataset.aiAction==='ai-download-sql')saveFile(await dataRequest('/'+ai.datasetId+'/sql',ai.options,undefined,true),'dataset-'+ai.datasetId+'-ai.sql');
+  if(b.dataset.aiAction==='ai-apply-clean'&&confirm('按刚才预览的规则生成新版本？原始数据将保留。')){const result=await dataRequest('/'+ai.datasetId+'/clean/apply',ai.rule);dataState.list=await dataRequest();stage=1;await selectDataset(result.id);}
+  if(b.dataset.aiAction==='ai-download-reference')saveFile(new Blob([ai.reference],{type:'text/plain;charset=utf-8'}),'ai-visualization-reference.txt');
  }catch(e){toast(e.message);}finally{if(b.isConnected)b.disabled=false;}
 },true);
 

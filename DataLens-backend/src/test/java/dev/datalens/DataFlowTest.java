@@ -69,6 +69,11 @@ class DataFlowTest {
   mvc.perform(post("/api/data/"+id+"/confirm").session(session)).andExpect(status().isForbidden());
   mvc.perform(post("/api/data/"+id+"/confirm").session(session).with(csrf())).andExpect(status().isOk());
   MockHttpSession other=new MockHttpSession();other.setAttribute("user",new Auth.User(90002,"other","other@example.test"));
+  String rename="/api/data/"+id+"/rename";
+  String body="{\"name\":\" 新名称 \"}";
+  mvc.perform(post(rename).session(other).with(csrf()).contentType("application/json").content(body)).andExpect(status().isNotFound());
+  mvc.perform(post(rename).session(session).with(csrf()).contentType("application/json").content(body)).andExpect(status().isOk());
+  assertEquals("新名称",store.owned(id,90001).get("name"));
   mvc.perform(get("/api/data/"+id).session(other)).andExpect(status().isNotFound());
   mvc.perform(get("/api/data/"+id+"/csv").session(other)).andExpect(status().isNotFound());
   mvc.perform(post("/api/data/"+id+"/sql").session(other).with(csrf()).contentType("application/json").content("{}")).andExpect(status().isNotFound());

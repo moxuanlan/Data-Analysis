@@ -28,6 +28,13 @@ class DataApi {
   long owner=user(request);long id=imports.upload(owner,file,encoding,delimiter,sheet,header,nullToken);return store.owned(id,owner);
  }
  @PostMapping("/{id}/confirm") Map<String,Object> confirm(@PathVariable long id,HttpServletRequest request){long owner=user(request);store.owned(id,owner);store.db.update("UPDATE datasets SET status='READY' WHERE id=? AND owner_id=?",id,owner);return store.owned(id,owner);}
+ @PostMapping("/{id}/rename") @Transactional Map<String,String> rename(@PathVariable long id,@RequestBody Map<String,String> body,HttpServletRequest request){
+  long owner=user(request);store.owned(id,owner);
+  String name=Objects.toString(body.get("name"),"").strip();
+  if(name.isBlank()||name.codePointCount(0,name.length())>255)throw DatasetStore.bad("名称须为 1 至 255 个字符");
+  store.db.update("UPDATE datasets SET name=? WHERE id=? AND owner_id=?",name,id,owner);
+  return Map.of("name",name);
+ }
  @DeleteMapping("/{id}") @Transactional Map<String,String> delete(@PathVariable long id,HttpServletRequest request){long owner=user(request);store.owned(id,owner);store.db.update("DELETE FROM datasets WHERE id=? AND owner_id=?",id,owner);return Map.of("message","数据集已删除");}
  @PostMapping("/{id}/clean/auto/apply") Map<String,Object> autoApply(@PathVariable long id,@RequestBody AutoCleaning.Plan plan,HttpServletRequest request){return autoCleaning.run(id,user(request),plan,true);}
  @PostMapping("/{id}/clean/preview") Map<String,Object> preview(@PathVariable long id,@RequestBody Cleaning.Rule rule,HttpServletRequest request){return cleaning.run(id,user(request),rule,false);}
