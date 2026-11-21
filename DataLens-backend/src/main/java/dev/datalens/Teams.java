@@ -14,6 +14,15 @@ class Teams {
  final DatasetStore store;final Auth auth;
  Teams(DatasetStore store,Auth auth){this.store=store;this.auth=auth;}
  @GetMapping List<Map<String,Object>> list(HttpServletRequest r){return store.db.queryForList("SELECT t.id,t.name,t.owner_id FROM teams t JOIN team_members m ON t.id=m.team_id WHERE m.user_id=?",auth.me(r).id);}
+ @GetMapping("/{team}") @Transactional(readOnly=true) Map<String,Object> details(@PathVariable long team,HttpServletRequest request){
+  long user=auth.me(request).id;
+  var teams=store.db.queryForList("SELECT t.name,u.username AS administrator FROM teams t JOIN users u ON u.id=t.owner_id JOIN team_members m ON m.team_id=t.id WHERE t.id=? AND m.user_id=?",team,user);
+  if(teams.isEmpty())throw new ResponseStatusException(HttpStatus.NOT_FOUND,"团队不存在或你不是该团队成员");
+  var details=teams.get(0);
+  details.put("members",store.db.queryForList("SELECT u.username FROM team_members m JOIN users u ON u.id=m.user_id WHERE m.team_id=? ORDER BY u.id",String.class,team));
+  details.put("datasets",store.db.queryForList("SELECT d.id,d.name,d.row_count FROM dataset_shares s JOIN datasets d ON d.id=s.dataset_id WHERE s.team_id=? AND d.status='READY' ORDER BY d.id DESC",team));
+  return details;
+ }
  @PostMapping @Transactional Map<String,Long> create(@RequestBody Map<String,String> body,HttpServletRequest r){
   long owner=auth.me(r).id;String name=body.get("name");if(name==null||name.isBlank()||name.length()>100)throw DatasetStore.bad("团队名称须为 1–100 字符");
   var key=new GeneratedKeyHolder();store.db.update(c->{var p=c.prepareStatement("INSERT INTO teams(owner_id,name) VALUES(?,?)",new String[]{"id"});p.setLong(1,owner);p.setString(2,name);return p;},key);long id=Objects.requireNonNull(key.getKey()).longValue();store.db.update("INSERT INTO team_members(team_id,user_id) VALUES(?,?)",id,owner);return Map.of("id",id);

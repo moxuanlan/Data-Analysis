@@ -37,6 +37,13 @@ class DataFlowTest {
   var members=teams.members(team,req);assertEquals(1,members.size());assertEquals(90002,((Number)members.get(0).get("id")).longValue());
   var other=new MockHttpSession();other.setAttribute("user",new Auth.User(90002,"member","member@example.test"));var memberReq=new MockHttpServletRequest();memberReq.setSession(other);
   assertThrows(Exception.class,()->teams.add(team,Map.of("account","qa@example.test"),memberReq));
+  long shared=upload("id\n1\n");confirm(shared);teams.share(team,shared,req);
+  long personal=upload("id\n2\n");confirm(personal);
+  var info=teams.details(team,memberReq);assertEquals("Team",info.get("name"));
+  assertTrue(((List<?>)info.get("members")).contains("member"));
+  var visible=(List<?>)info.get("datasets");assertEquals(1,visible.size());assertEquals(shared,((Number)((Map<?,?>)visible.get(0)).get("id")).longValue());
+  teams.remove(team,90002,req);
+  assertThrows(org.springframework.web.server.ResponseStatusException.class,()->teams.details(team,memberReq));
   assertTrue(teams.create(Map.of("name","Own team"),memberReq).get("id")>0);
  }
  @Test void automaticCleaningProcessesAllRowsAndPreservesOriginal()throws Exception{

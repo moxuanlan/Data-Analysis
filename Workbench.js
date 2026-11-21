@@ -36,7 +36,14 @@ render = function(){
  else if(stage===2)content+=d.readOnly?'<p>此数据集为团队只读共享，只有所有者可生成清洗版本。</p>':cleanPanel();else if(stage===3)content+=sqlPanel();else if(stage===4)content+=visualPanel();
  if(stage===-1)content+=teamPanel();$('#work').innerHTML=shell(content);$('#work .ai .muted').textContent='元宝搜索提供资料，DeepSeek 提供建议；数据清洗和 SQL 都需检查确认。';$('#work .ai .bubble').textContent='当前数据工作流';$('#work .ai h3').textContent='检索与 AI 建议';$('#work #answer').textContent='生成前确认外发内容；没有配置凭据时会明确报错。';$('#work .ai textarea').placeholder='说明查询、清洗或可视化目标…';$('#work .ai [data-ask]').setAttribute('aria-label','生成建议');dataState.ai=null;setupWorkbench();observeEntrance();
 };
-async function refreshDatasets(){dataState.list=await dataRequest();render();}
+async function refreshDatasets(){
+ const user=currentUser?.id;
+ const [list,teams]=await Promise.all([dataRequest(),dataRequest('/teams')]);
+ if(!user||currentUser?.id!==user)return;
+ dataState.list=list;dataState.teams=teams;
+ if(dataState.dataset&&!list.some(d=>d.id===dataState.dataset.id))dataState.dataset=null;
+ render();
+}
 async function selectDataset(id,page=0){dataState.dataset=await dataRequest('/'+id+'?page='+page);dataState.page=page;render();}
 function sqlOptions(){const used=new Set();return {table:$('#data-table').value,kind:$('#data-sql-kind').value,key:$('#data-sql-key').value,fields:dataState.dataset.columns.map((c,i)=>{let name=/^[\p{L}_][\p{L}\p{N}_]{0,63}$/u.test(c)?c:'column_'+(i+1);while(used.has(name.toLowerCase()))name='_'+name.slice(0,62);used.add(name.toLowerCase());return {name,type:'LONGTEXT',nullable:true,primary:false};})};}
 document.addEventListener('change',async event=>{try{
@@ -85,11 +92,11 @@ document.addEventListener('click',async event=>{
  }catch(e){toast(e.message);if(id==='preview-clean'&&$('#clean-status'))$('#clean-status').textContent=e.message;const message=$('#data-message');if(message)message.textContent=e.message;}finally{if(b.isConnected)b.disabled=false;}
 },true);
 const oldShowWorkspace=showWorkspace;
-showWorkspace=function(i=0){oldShowWorkspace(i);queueMicrotask(firstWorkflow);if(!dataState.list.length)dataRequest().then(list=>{dataState.list=list;return dataRequest('/teams');}).then(teams=>{dataState.teams=teams;if(!$('#work').hidden)render();}).catch(e=>toast(e.message));};
+showWorkspace=function(i=0){oldShowWorkspace(i);queueMicrotask(firstWorkflow);if(i===-1||!dataState.list.length)refreshDatasets().catch(e=>toast(e.message));};
 const originalLogout=$('#user-logout').onclick;
 $('#user-logout').onclick=async()=>{await originalLogout();if(!demoLoggedIn){dataState.dataset=null;dataState.list=[];dataState.teams=[];dataState.sql=null;dataState.autoClean=null;}};
 function teamOptions(owned=false){return dataState.teams.filter(t=>!owned||Number(t.owner_id)===Number(currentUser?.id)).map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');}
-function teamPanel(){const managed=dataState.teams.filter(t=>Number(t.owner_id)===Number(currentUser?.id));return `<section class="panel"><h3>团队与成员</h3><p>你是自己创建团队的管理员；加入其他团队时为成员，各团队身份互不影响。</p><p>${dataState.teams.map(t=>escapeHtml(t.name)+' · '+(Number(t.owner_id)===Number(currentUser?.id)?'管理员':'成员')).join('；')||'尚未创建或加入团队，创建后你将成为该团队管理员。'}</p>${input('新团队名称','new-team-name')}<button id="create-team">创建团队</button>${managed.length?`<label>管理我的团队<select id="manage-team">${teamOptions(true)}</select></label>${input('成员已注册邮箱／手机号','member-account')}<button id="add-member">添加成员</button><button id="list-members">查看成员</button><div id="members" role="status"></div>`:''}</section>`;}
+function teamPanel(){const managed=dataState.teams.filter(t=>Number(t.owner_id)===Number(currentUser?.id));return `<section class="panel"><h3>团队与成员</h3><p>你是自己创建团队的管理员；加入其他团队时为成员，各团队身份互不影响。</p><p>${dataState.teams.map(t=>escapeHtml(t.name)+' · '+(Number(t.owner_id)===Number(currentUser?.id)?'管理员':'成员')).join('；')||'尚未创建或加入团队，创建后你将成为该团队管理员。'}</p>${dataState.teams.map(t=>`<button data-view-team="${t.id}">查看 ${escapeHtml(t.name)}</button>`).join('')}<div id="team-details" aria-live="polite"></div>${input('新团队名称','new-team-name')}<button id="create-team">创建团队</button>${managed.length?`<label>管理我的团队<select id="manage-team">${teamOptions(true)}</select></label>${input('成员已注册邮箱／手机号','member-account')}<button id="add-member">添加成员</button><button id="list-members">查看成员</button><div id="members" role="status"></div>`:''}</section>`;}
 function teamSharePanel(){return `<section class="panel"><label>共享到团队<select id="share-team">${teamOptions()}</select></label><button id="share-dataset">只读共享此版本</button><button id="unshare-dataset">撤销此团队的共享</button></section>`;}
 const pendingCrawlJobs=new Set();
 function notifyCrawlCompletion(jobs){
@@ -105,9 +112,17 @@ async function loadJobs(){const target=$('#crawl-jobs');if(!target)return;const 
 document.addEventListener('click',async event=>{
  const b=event.target.closest('button');if(!b)return;const id=b.id;
  const actions=['create-team','add-member','list-members','share-dataset','unshare-dataset','inspect-crawl','start-crawl','refresh-jobs','delete-crawl-jobs'];
- if(!actions.includes(id)&&!b.dataset.removeMember&&!b.dataset.cancelJob&&!b.dataset.openDataset)return;
+ if(!actions.includes(id)&&!b.dataset.viewTeam&&!b.dataset.removeMember&&!b.dataset.cancelJob&&!b.dataset.openDataset)return;
  b.disabled=true;
  try{
+  if(b.dataset.viewTeam){
+   const panel=$('#team-details'),team=b.dataset.viewTeam;panel.dataset.team=team;
+   panel.textContent='正在加载团队信息…';
+   try{
+    const info=await dataRequest('/teams/'+team);
+    if(panel.isConnected&&panel.dataset.team===team)panel.innerHTML=`<h4>${escapeHtml(info.name)}</h4><p>管理员：${escapeHtml(info.administrator)}</p><p>成员：${info.members.map(escapeHtml).join('、')}</p><h4>团队共享数据集</h4>${info.datasets.map(d=>`<p><button data-open-dataset="${d.id}">${escapeHtml(d.name)}</button> · ${d.row_count} 行</p>`).join('')||'<p>暂无已共享的数据集。</p>'}`;
+   }catch(e){if(panel.isConnected&&panel.dataset.team===team)panel.textContent=e.message;}
+  }
   if(id==='create-team'){await dataRequest('/teams',{name:$('#new-team-name').value});dataState.teams=await dataRequest('/teams');render();toast('团队已创建');}
   if(id==='add-member'){if(!$('#manage-team').value)throw new Error('请选择团队');await dataRequest('/teams/'+$('#manage-team').value+'/members',{account:$('#member-account').value});toast('成员已添加');}
   if(id==='list-members'){const team=$('#manage-team').value;if(!team)throw new Error('请选择团队');const members=await dataRequest('/teams/'+team+'/members');$('#members').innerHTML=members.map(m=>`<p>${escapeHtml(m.username)} · ${escapeHtml(m.account)} <button data-team="${team}" data-remove-member="${m.id}">移除成员</button></p>`).join('')||'<p>暂无成员</p>';}
