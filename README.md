@@ -1,6 +1,22 @@
 # DataLens
 
-Java 11+ / Spring Boot 2.7.18 / MySQL 8，浏览器使用的数据处理工作台。本机地址：<http://127.0.0.1:8088/DataLens-UI.html>。
+DataLens 将数据采集、预览、清洗、SQL 脚本和可视化串联到同一个工作台，并结合腾讯元宝搜索与 DeepSeek 辅助分析。
+
+## 在线体验
+
+**访问 DataLens：[https://data-analysis-woad-sigma.vercel.app/](https://data-analysis-woad-sigma.vercel.app/)**
+
+直接通过浏览器访问，无需下载代码，也无需在自己的电脑安装 Java 或创建 MySQL 数据库。注册并登录后，即可使用工作台；线上账号和数据与自行部署的实例相互独立。
+
+使用流程：导入 CSV / Excel 或识别公开网页 → 预览并保存数据 → 智能清洗并确认新版本 → 获取 SQL 或查看图表。
+
+- 网页采集并不适用于所有网站：仅用于学习研究，遵守来源网站的访问规则；登录验证、动态加载或禁止采集的页面可能无法读取。
+- 智能清洗会按页面说明向 DeepSeek 发送字段、统计和有限样例，请确认数据适合外发；保存前核对预览，原始数据保留。
+- 若要把导出的 SQL 用于本地分析，需要自行创建并选择目标数据库；网站不会代替你执行 SQL。
+
+## 自行部署
+
+技术栈：Java 11+ / Spring Boot 2.7.18 / MySQL 8。本机部署完成后访问：<http://127.0.0.1:8088/DataLens-UI.html>。具体环境配置见下方“本机启动”。
 
 ## 已实现
 
@@ -100,7 +116,7 @@ node tests/browser-smoke.mjs
 
 AI 面板直接输入问题或网址，不再单独填写检索词。无网址时元宝 SearchPro 检索前 3 个来源，读取可访问的网页详情后由 DeepSeek 整理回答；有网址时直接读取该网页。界面标出来源及详情读取状态，失败时不编造页面内容。DeepSeek 的可选联网辅助直接使用当前问题。仅允许有限次同站公开页面重定向；错误页、登录验证及明确访问拒绝会停止，并显示原因。
 
-### Vercel + Railway 完整部署
+### 可选方案：Vercel + Railway 部署
 
 Vercel 部署前端及同源 `/api/*` 代理；Railway 运行 Docker 中的 Java 服务及 MySQL。Vercel 不能直接运行本项目的 Java 常驻服务。
 
